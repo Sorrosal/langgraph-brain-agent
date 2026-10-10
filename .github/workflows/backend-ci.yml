@@ -11,6 +11,9 @@ on:
       - "backend/**"
       - ".github/workflows/backend-ci.yml"
 
+permissions:
+  contents: read
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -19,13 +22,14 @@ jobs:
   test:
     name: Lint, type-check and test
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: backend
 
     services:
       postgres:
-        image: pgvector/pgvector:pg17
+        image: pgvector/pgvector:0.8.0-pg17
         env:
           POSTGRES_DB: brain
           POSTGRES_USER: brain
@@ -65,6 +69,9 @@ jobs:
 
       - name: Mypy
         run: uv run mypy src
+
+      - name: Mypy (tests)
+        run: uv run mypy tests
 
       - name: Pytest
         run: uv run pytest --cov
