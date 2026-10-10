@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg17
+    container_name: brain-agent-postgres
+    environment:
+      POSTGRES_DB: brain
+      POSTGRES_USER: brain
+      POSTGRES_PASSWORD: brain
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U brain -d brain"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
