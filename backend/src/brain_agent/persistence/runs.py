@@ -14,6 +14,8 @@ from psycopg import AsyncConnection
 from psycopg.rows import DictRow
 from psycopg_pool import AsyncConnectionPool
 
+from brain_agent.errors import ThreadBusyError
+
 logger = structlog.get_logger(__name__)
 
 DEFAULT_MAX_ATTEMPTS = 3
@@ -37,6 +39,9 @@ CREATE TABLE IF NOT EXISTS agent_runs (
 );
 """,
     """
+ALTER TABLE agent_runs ADD COLUMN IF NOT EXISTS fencing_token bigint NOT NULL DEFAULT 0
+""",
+    """
 CREATE INDEX IF NOT EXISTS agent_runs_orphan_idx
     ON agent_runs (lease_expires_at) WHERE status = 'running'
 """,
@@ -46,21 +51,28 @@ CREATE INDEX IF NOT EXISTS agent_runs_orphan_idx
 _MIGRATION_LOCK_KEY = 7_424_001
 
 _MARK_RUNNING = """
-INSERT INTO agent_runs (thread_id, status, owner, lease_expires_at)
-VALUES (%(thread_id)s, 'running', %(owner)s, now() + make_interval(secs => %(lease)s))
+INSERT INTO agent_runs (thread_id, status, owner, lease_expires_at, fencing_token)
+VALUES (%(thread_id)s, 'running', %(owner)s, now() + make_interval(secs => %(lease)s), 1)
 ON CONFLICT (thread_id) DO UPDATE SET
     status = 'running',
     owner = EXCLUDED.owner,
     lease_expires_at = EXCLUDED.lease_expires_at,
+    fencing_token = agent_runs.fencing_token + 1,
     attempts = CASE WHEN %(reset)s THEN 0 ELSE agent_runs.attempts END,
     last_error = CASE WHEN %(reset)s THEN NULL ELSE agent_runs.last_error END,
     updated_at = now()
+WHERE agent_runs.status <> 'running'
+   OR agent_runs.lease_expires_at IS NULL
+   OR agent_runs.lease_expires_at < now()
+   OR agent_runs.owner = EXCLUDED.owner
+RETURNING fencing_token
 """
 
 _HEARTBEAT = """
 UPDATE agent_runs
 SET lease_expires_at = now() + make_interval(secs => %(lease)s), updated_at = now()
-WHERE thread_id = %(thread_id)s AND owner = %(owner)s AND status = 'running'
+WHERE thread_id = %(thread_id)s AND owner = %(owner)s AND fencing_token = %(token)s
+  AND status = 'running'
 RETURNING thread_id
 """
 
@@ -71,11 +83,14 @@ SET status = %(status)s,
     lease_expires_at = NULL,
     last_error = COALESCE(%(error)s, last_error),
     updated_at = now()
-WHERE thread_id = %(thread_id)s
+WHERE thread_id = %(thread_id)s AND owner = %(owner)s AND fencing_token = %(token)s
+RETURNING thread_id
 """
 
 _RECORD_ERROR = """
-UPDATE agent_runs SET last_error = %(error)s, updated_at = now() WHERE thread_id = %(thread_id)s
+UPDATE agent_runs SET last_error = %(error)s, updated_at = now()
+WHERE thread_id = %(thread_id)s AND owner = %(owner)s AND fencing_token = %(token)s
+RETURNING thread_id
 """
 
 _ORPHANS = """
@@ -105,13 +120,15 @@ UPDATE agent_runs
 SET owner = %(owner)s,
     lease_expires_at = now() + make_interval(secs => %(lease)s),
     attempts = attempts + 1,
+    fencing_token = fencing_token + 1,
     updated_at = now()
 WHERE thread_id IN ({_ORPHANS.format(comparison="<")})
 RETURNING thread_id
 """
 
 _GET = """
-SELECT thread_id, status, owner, lease_expires_at, attempts, last_error, created_at, updated_at
+SELECT thread_id, status, owner, lease_expires_at, attempts, last_error, fencing_token,
+    created_at, updated_at
 FROM agent_runs WHERE thread_id = %(thread_id)s
 """
 
@@ -128,8 +145,19 @@ class RunRecord:
     lease_expires_at: datetime | None
     attempts: int
     last_error: str | None
+    fencing_token: int
     created_at: datetime
     updated_at: datetime
+
+
+class RunView(Protocol):
+    """Read-only part of a run row that callers rely on (satisfied by :class:`RunRecord`)."""
+
+    @property
+    def status(self) -> str: ...
+
+    @property
+    def last_error(self) -> str | None: ...
 
 
 class RunLedger(Protocol):
@@ -137,15 +165,22 @@ class RunLedger(Protocol):
 
     async def mark_running(
         self, thread_id: str, owner: str, lease_seconds: float, *, reset_attempts: bool = True
-    ) -> None: ...
+    ) -> int: ...
 
-    async def heartbeat(self, thread_id: str, owner: str, lease_seconds: float) -> bool: ...
+    async def heartbeat(
+        self, thread_id: str, owner: str, token: int, lease_seconds: float
+    ) -> bool: ...
 
     async def mark_finished(
-        self, thread_id: str, status: FinishedState, error: str | None = None
-    ) -> None: ...
+        self,
+        thread_id: str,
+        owner: str,
+        token: int,
+        status: FinishedState,
+        error: str | None = None,
+    ) -> bool: ...
 
-    async def record_error(self, thread_id: str, error: str) -> None: ...
+    async def record_error(self, thread_id: str, owner: str, token: int, error: str) -> bool: ...
 
     async def claim_orphans(
         self,
@@ -155,6 +190,8 @@ class RunLedger(Protocol):
         *,
         max_attempts: int = DEFAULT_MAX_ATTEMPTS,
     ) -> list[str]: ...
+
+    async def get(self, thread_id: str) -> RunView | None: ...
 
 
 class RunRegistry:
@@ -176,8 +213,14 @@ class RunRegistry:
 
     async def mark_running(
         self, thread_id: str, owner: str, lease_seconds: float, *, reset_attempts: bool = True
-    ) -> None:
-        """Take (or create) the run for ``owner`` with a fresh lease.
+    ) -> int:
+        """Take (or create) the run for ``owner`` with a fresh lease; return its fencing token.
+
+        The token grows on every claim; the owner-scoped writes below only apply while it is
+        still the current one, so a stale owner can never overwrite the new owner's run.
+
+        Raises:
+            ThreadBusyError: another owner holds an unexpired lease on the running run.
 
         ``reset_attempts=False`` is for resuming a claimed run, which must keep its count.
         """
@@ -188,28 +231,49 @@ class RunRegistry:
             "reset": reset_attempts,
         }
         async with self._pool.connection() as conn:
-            await conn.execute(_MARK_RUNNING.encode(), params)
+            row = await (await conn.execute(_MARK_RUNNING.encode(), params)).fetchone()
+        if row is None:
+            raise ThreadBusyError(thread_id)
+        return int(row["fencing_token"])
 
-    async def heartbeat(self, thread_id: str, owner: str, lease_seconds: float) -> bool:
-        """Extend the lease; ``False`` when ``owner`` no longer holds the running run."""
-        params: Params = {"thread_id": thread_id, "owner": owner, "lease": float(lease_seconds)}
+    async def heartbeat(self, thread_id: str, owner: str, token: int, lease_seconds: float) -> bool:
+        """Extend the lease; ``False`` when ``owner``/``token`` no longer hold the running run."""
+        params: Params = {
+            "thread_id": thread_id,
+            "owner": owner,
+            "token": token,
+            "lease": float(lease_seconds),
+        }
         async with self._pool.connection() as conn:
             cursor = await conn.execute(_HEARTBEAT.encode(), params)
             return await cursor.fetchone() is not None
 
     async def mark_finished(
-        self, thread_id: str, status: FinishedState, error: str | None = None
-    ) -> None:
-        """Close the run with a terminal/parked status and release its lease."""
-        params: Params = {"thread_id": thread_id, "status": status, "error": error}
+        self,
+        thread_id: str,
+        owner: str,
+        token: int,
+        status: FinishedState,
+        error: str | None = None,
+    ) -> bool:
+        """Close the run and release its lease; ``False`` (nothing written) for a stale owner."""
+        params: Params = {
+            "thread_id": thread_id,
+            "owner": owner,
+            "token": token,
+            "status": status,
+            "error": error,
+        }
         async with self._pool.connection() as conn:
-            await conn.execute(_MARK_FINISHED.encode(), params)
+            cursor = await conn.execute(_MARK_FINISHED.encode(), params)
+            return await cursor.fetchone() is not None
 
-    async def record_error(self, thread_id: str, error: str) -> None:
-        """Store ``last_error`` without changing status or lease."""
-        params: Params = {"thread_id": thread_id, "error": error}
+    async def record_error(self, thread_id: str, owner: str, token: int, error: str) -> bool:
+        """Store ``last_error`` without touching status or lease; ``False`` for a stale owner."""
+        params: Params = {"thread_id": thread_id, "owner": owner, "token": token, "error": error}
         async with self._pool.connection() as conn:
-            await conn.execute(_RECORD_ERROR.encode(), params)
+            cursor = await conn.execute(_RECORD_ERROR.encode(), params)
+            return await cursor.fetchone() is not None
 
     async def claim_orphans(
         self,

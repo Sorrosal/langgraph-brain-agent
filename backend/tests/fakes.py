@@ -12,6 +12,8 @@ from langchain_core.runnables import Runnable
 from langchain_core.tools import BaseTool
 from pydantic import PrivateAttr, SkipValidation
 
+from brain_agent.errors import ThreadBusyError
+
 
 class ScriptedChatModel(BaseChatModel):
     """Chat model that replays a scripted list of responses, one per call.
@@ -102,11 +104,13 @@ class FakeRunRecord:
     attempts: int = 0
     last_error: str | None = None
     expired: bool = False
+    fencing_token: int = 0
 
 
 class FakeRunLedger:
     """In-memory :class:`brain_agent.persistence.runs.RunLedger` for tests without Postgres.
 
+    Mirrors :class:`~brain_agent.persistence.runs.RunRegistry` (fencing tokens, busy leases).
     Leases are not timed: a test marks a run as orphaned with :meth:`expire`.
     """
 
@@ -118,34 +122,55 @@ class FakeRunLedger:
     def expire(self, thread_id: str) -> None:
         self.records[thread_id].expired = True
 
+    def _holds(self, thread_id: str, owner: str, token: int) -> FakeRunRecord | None:
+        record = self.records.get(thread_id)
+        held = record is not None and record.owner == owner and record.fencing_token == token
+        return record if held else None
+
     async def mark_running(
         self, thread_id: str, owner: str, lease_seconds: float, *, reset_attempts: bool = True
-    ) -> None:
-        self.events.append(f"running:{thread_id}")
+    ) -> int:
         record = self.records.get(thread_id)
         if record is None:
-            self.records[thread_id] = FakeRunRecord(thread_id, "running", owner)
-            return
+            record = self.records[thread_id] = FakeRunRecord(thread_id, "running", owner)
+        elif (
+            record.status == "running"
+            and record.owner is not None
+            and not record.expired
+            and record.owner != owner
+        ):
+            raise ThreadBusyError(thread_id)
+        self.events.append(f"running:{thread_id}")
         record.status, record.owner, record.expired = "running", owner, False
+        record.fencing_token += 1
         if reset_attempts:
             record.attempts, record.last_error = 0, None
+        return record.fencing_token
 
-    async def heartbeat(self, thread_id: str, owner: str, lease_seconds: float) -> bool:
-        record = self.records.get(thread_id)
-        if record is None or record.owner != owner or record.status != "running":
+    async def heartbeat(self, thread_id: str, owner: str, token: int, lease_seconds: float) -> bool:
+        record = self._holds(thread_id, owner, token)
+        if record is None or record.status != "running":
             return False
         self.heartbeats += 1
         return True
 
-    async def mark_finished(self, thread_id: str, status: str, error: str | None = None) -> None:
+    async def mark_finished(
+        self, thread_id: str, owner: str, token: int, status: str, error: str | None = None
+    ) -> bool:
+        record = self._holds(thread_id, owner, token)
+        if record is None:
+            return False
         self.events.append(f"{status}:{thread_id}")
-        record = self.records.get(thread_id)
-        if record is not None:
-            record.status, record.owner, record.expired = status, None, False
-            record.last_error = error if error is not None else record.last_error
+        record.status, record.owner, record.expired = status, None, False
+        record.last_error = error if error is not None else record.last_error
+        return True
 
-    async def record_error(self, thread_id: str, error: str) -> None:
-        self.records[thread_id].last_error = error
+    async def record_error(self, thread_id: str, owner: str, token: int, error: str) -> bool:
+        record = self._holds(thread_id, owner, token)
+        if record is None:
+            return False
+        record.last_error = error
+        return True
 
     async def claim_orphans(
         self, owner: str, lease_seconds: float, limit: int, *, max_attempts: int = 3
@@ -160,6 +185,7 @@ class FakeRunLedger:
                 record.status, record.owner, record.expired = "failed", None, False
                 continue
             record.attempts += 1
+            record.fencing_token += 1
             record.owner, record.expired = owner, False
             claimed.append(record.thread_id)
         return claimed

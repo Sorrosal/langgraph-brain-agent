@@ -91,7 +91,6 @@ async def test_run_killed_mid_tool_is_resumed_by_another_process(
         runner,
         persistence.runs,
         interval_seconds=0.2,
-        lease_seconds=LEASE_SECONDS,
         max_attempts=3,
         batch_size=10,
     )

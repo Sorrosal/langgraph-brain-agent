@@ -6,7 +6,7 @@ import os
 import socket
 import uuid
 from dataclasses import dataclass
-from typing import Literal, Protocol
+from typing import Literal
 
 import structlog
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, ToolMessage
@@ -14,7 +14,7 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.types import StateSnapshot
 
-from brain_agent.errors import ConfigurationError, ThreadBusyError
+from brain_agent.errors import ConfigurationError, LeaseLostError, ThreadBusyError
 from brain_agent.graph.builder import AgentGraph
 from brain_agent.graph.nodes import TOOLS_NODE
 from brain_agent.graph.retry import is_transient_error
@@ -43,20 +43,6 @@ def default_owner_id() -> str:
     return f"{socket.gethostname()}-{os.getpid()}-{uuid.uuid4().hex[:8]}"
 
 
-class _RunRecordView(Protocol):
-    @property
-    def status(self) -> str: ...
-
-    @property
-    def last_error(self) -> str | None: ...
-
-
-class _LookupLedger(RunLedger, Protocol):
-    """A :class:`RunLedger` that can also read a run back (as ``RunRegistry`` does)."""
-
-    async def get(self, thread_id: str) -> _RunRecordView | None: ...
-
-
 class AgentRunner:
     """Runs the agent graph per conversation thread with synchronous checkpointing.
 
@@ -83,6 +69,10 @@ class AgentRunner:
     turn. Without a registry a failure cannot be told apart from live work, so pending work
     always raises :class:`ThreadBusyError`.
 
+    Lease fencing: if the heartbeat finds the lease gone (another owner claimed the run after
+    this process stalled), the graph task is cancelled and :class:`LeaseLostError` is raised
+    from :meth:`run`/:meth:`resume`; the run is left to its new owner, never marked finished.
+
     Cancellation (``CancelledError``, e.g. shutdown) is not recorded: the run stays
     ``running`` and is recovered once the lease expires.
     """
@@ -91,7 +81,7 @@ class AgentRunner:
         self,
         graph: AgentGraph,
         *,
-        runs: _LookupLedger | None = None,
+        runs: RunLedger | None = None,
         owner_id: str | None = None,
         lease_seconds: float = DEFAULT_LEASE_SECONDS,
         heartbeat_interval: float | None = None,
@@ -100,11 +90,24 @@ class AgentRunner:
             raise ConfigurationError("AgentRunner requires a graph compiled with a checkpointer")
         if lease_seconds <= 0:
             raise ValueError(f"lease_seconds must be positive, got {lease_seconds}")
+        resolved_interval = lease_seconds / 3 if heartbeat_interval is None else heartbeat_interval
+        if resolved_interval <= 0:
+            raise ValueError(f"heartbeat_interval must be positive, got {heartbeat_interval}")
+        if resolved_interval >= lease_seconds:
+            raise ValueError(
+                f"heartbeat_interval ({resolved_interval}) must be shorter than "
+                f"lease_seconds ({lease_seconds})"
+            )
         self._graph = graph
         self._runs = runs
         self._owner_id = owner_id or default_owner_id()
         self._lease_seconds = lease_seconds
-        self._heartbeat_interval = heartbeat_interval or lease_seconds / 3
+        self._heartbeat_interval = resolved_interval
+
+    @property
+    def lease_seconds(self) -> float:
+        """Duration of the leases this runner takes (and renews)."""
+        return self._lease_seconds
 
     @property
     def owner_id(self) -> str:
@@ -127,8 +130,8 @@ class AgentRunner:
             await self._abandon_failed_work(thread_id, config, pending, record.last_error)
         # A new user message starts a new run, so the step budget starts again.
         update: AgentState = {"messages": [HumanMessage(content=message)], "step_count": 0}
-        await self._execute(thread_id, update, reset_attempts=True)
-        return await self._finish(thread_id)
+        token = await self._execute(thread_id, update, reset_attempts=True)
+        return await self._finish(thread_id, token)
 
     async def _abandon_failed_work(
         self,
@@ -159,8 +162,21 @@ class AgentRunner:
         config = _thread_config(thread_id)
         snapshot = await self._graph.aget_state(config)
         if snapshot.next:
-            await self._execute(thread_id, None, reset_attempts=False)
-        return await self._finish(thread_id)
+            token = await self._execute(thread_id, None, reset_attempts=False)
+        else:
+            token = await self._reclaim_stale_row(thread_id)
+        return await self._finish(thread_id, token)
+
+    async def _reclaim_stale_row(self, thread_id: str) -> int | None:
+        """Re-lease a ``running`` row with nothing left to run, so it can be closed fenced."""
+        if self._runs is None:
+            return None
+        record = await self._runs.get(thread_id)
+        if record is None or record.status != "running":
+            return None
+        return await self._runs.mark_running(
+            thread_id, self._owner_id, self._lease_seconds, reset_attempts=False
+        )
 
     async def get_state(self, thread_id: str) -> StateSnapshot:
         """Return the latest checkpointed state of ``thread_id``."""
@@ -168,53 +184,85 @@ class AgentRunner:
 
     async def _execute(
         self, thread_id: str, graph_input: AgentState | None, *, reset_attempts: bool
-    ) -> None:
+    ) -> int | None:
+        """Run the graph under a lease; return the fencing token (``None`` without a registry)."""
         config = _thread_config(thread_id)
         runs = self._runs
         if runs is None:
             await self._graph.ainvoke(graph_input, config, durability="sync")
-            return
+            return None
 
-        await runs.mark_running(
+        token = await runs.mark_running(
             thread_id, self._owner_id, self._lease_seconds, reset_attempts=reset_attempts
         )
-        heartbeat = asyncio.create_task(self._heartbeat_loop(runs, thread_id))
+        lost = asyncio.Event()
+        graph_task = asyncio.ensure_future(
+            self._graph.ainvoke(graph_input, config, durability="sync")
+        )
+        heartbeat = asyncio.create_task(
+            self._heartbeat_loop(runs, thread_id, token, lost, graph_task)
+        )
         try:
-            await self._graph.ainvoke(graph_input, config, durability="sync")
+            await graph_task
+        except asyncio.CancelledError:
+            if lost.is_set():
+                raise LeaseLostError(thread_id) from None
+            raise
         except Exception as exc:
-            await self._record_failure(runs, thread_id, exc)
+            await self._record_failure(runs, thread_id, token, exc)
             raise
         finally:
             heartbeat.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await heartbeat
+        return token
 
-    async def _heartbeat_loop(self, runs: RunLedger, thread_id: str) -> None:
+    async def _heartbeat_loop(
+        self,
+        runs: RunLedger,
+        thread_id: str,
+        token: int,
+        lost: asyncio.Event,
+        graph_task: asyncio.Future[object],
+    ) -> None:
         log = logger.bind(thread_id=thread_id, owner=self._owner_id)
         while True:
             await asyncio.sleep(self._heartbeat_interval)
             try:
-                if not await runs.heartbeat(thread_id, self._owner_id, self._lease_seconds):
-                    log.warning("lease_lost")
+                renewed = await runs.heartbeat(
+                    thread_id, self._owner_id, token, self._lease_seconds
+                )
             except Exception:
                 # A missed beat is survivable (the lease outlasts several intervals).
                 log.warning("heartbeat_failed", exc_info=True)
+                continue
+            if not renewed:
+                log.error("lease_lost")
+                lost.set()
+                graph_task.cancel()
+                return
 
-    async def _record_failure(self, runs: RunLedger, thread_id: str, exc: Exception) -> None:
+    async def _record_failure(
+        self, runs: RunLedger, thread_id: str, token: int, exc: Exception
+    ) -> None:
         error = f"{type(exc).__name__}: {exc}"
         try:
             if is_transient_error(exc):
-                await runs.record_error(thread_id, error)
+                await runs.record_error(thread_id, self._owner_id, token, error)
             else:
-                await runs.mark_finished(thread_id, "failed", error)
+                await runs.mark_finished(thread_id, self._owner_id, token, "failed", error)
         except Exception:
             # Never mask the graph's own error; the lease will expire and recovery decides.
             logger.warning("run_failure_not_recorded", thread_id=thread_id, exc_info=True)
 
-    async def _finish(self, thread_id: str) -> RunResult:
+    async def _finish(self, thread_id: str, token: int | None) -> RunResult:
         result = await self._result(thread_id)
-        if self._runs is not None:
-            await self._runs.mark_finished(thread_id, result.status)
+        if self._runs is not None and token is not None:
+            finished = await self._runs.mark_finished(
+                thread_id, self._owner_id, token, result.status
+            )
+            if not finished:
+                raise LeaseLostError(thread_id)
         return result
 
     async def _result(self, thread_id: str) -> RunResult:

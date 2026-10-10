@@ -13,6 +13,7 @@ class FakeResumer:
     """Records resumes; ``failing`` thread ids raise."""
 
     owner_id = "recovery-owner"
+    lease_seconds = 30.0
 
     def __init__(self, failing: set[str] | None = None) -> None:
         self.resumed: list[str] = []
@@ -40,7 +41,6 @@ def _worker(
         resumer,
         ledger,
         interval_seconds=0.01,
-        lease_seconds=30,
         max_attempts=max_attempts,
         batch_size=batch_size,
     )
@@ -153,3 +153,49 @@ async def test_recover_on_startup_stops_when_nothing_is_claimed() -> None:
 def test_worker_validates_settings() -> None:
     with pytest.raises(ValueError, match="batch_size"):
         _worker(FakeResumer(), FakeRunLedger(), batch_size=0)
+    with pytest.raises(ValueError, match="max_concurrency"):
+        RecoveryWorker(FakeResumer(), FakeRunLedger(), max_concurrency=0)
+    with pytest.raises(ValueError, match="resume_timeout_seconds"):
+        RecoveryWorker(FakeResumer(), FakeRunLedger(), resume_timeout_seconds=0)
+
+
+class SlowResumer(FakeResumer):
+    """Resumes take ``delay`` seconds (``hang`` forever); the peak concurrency is recorded."""
+
+    def __init__(self, delay: float = 0.0, hang: str | None = None) -> None:
+        super().__init__()
+        self.delay, self.hang = delay, hang
+        self.active = 0
+        self.peak = 0
+
+    async def resume(self, thread_id: str) -> RunResult:
+        self.active += 1
+        self.peak = max(self.peak, self.active)
+        try:
+            await asyncio.sleep(30 if thread_id == self.hang else self.delay)
+            return await super().resume(thread_id)
+        finally:
+            self.active -= 1
+
+
+async def test_resumes_are_bounded_by_max_concurrency() -> None:
+    ledger, resumer = FakeRunLedger(), SlowResumer(0.02)
+    await _orphans(ledger, *"abcdef")
+
+    await RecoveryWorker(resumer, ledger, max_concurrency=2).run_once()
+
+    assert sorted(resumer.resumed) == list("abcdef")
+    assert resumer.peak == 2
+
+
+async def test_a_timed_out_resume_is_abandoned_and_the_others_finish() -> None:
+    ledger, resumer = FakeRunLedger(), SlowResumer(hang="hang")
+    await _orphans(ledger, "ok", "hang")
+    worker = RecoveryWorker(resumer, ledger, resume_timeout_seconds=0.05)
+
+    recovered = await asyncio.wait_for(worker.run_once(), timeout=5)
+
+    assert sorted(recovered) == ["hang", "ok"]
+    assert resumer.resumed == ["ok"]
+    assert resumer.active == 0
+    assert ledger.records["hang"].status == "running"  # left for lease expiry
