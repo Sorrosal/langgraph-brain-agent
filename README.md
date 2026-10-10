@@ -25,8 +25,8 @@ Served over FastAPI (SSE streaming, JWT auth) with a React UI and a public landi
 
 - [x] **Phase 0 — Scaffold**: monorepo layout, `uv`-managed backend, settings, health endpoint,
   Postgres (pgvector) via Docker Compose, CI.
-- [ ] **Phase 1 — Core graph**: LangGraph agent, PostgreSQL checkpointer, crash recovery.
-- [ ] **Phase 2 — Human-in-the-loop + idempotency**: `interrupt()` approvals, idempotent
+- [x] **Phase 1 — Core graph**: LangGraph agent, PostgreSQL checkpointer, crash recovery.
+- [x] **Phase 2 — Human-in-the-loop + idempotency**: `interrupt()` approvals, idempotent
   side effects.
 - [ ] **Phase 3 — Brain**: rules (`rules/*.yaml`), long-term memory, context assembly.
 - [ ] **Phase 4 — Business tools**: email, tasks, CRM.
