@@ -6,16 +6,17 @@ import os
 import socket
 import uuid
 from dataclasses import dataclass
-from typing import Literal
+from typing import Literal, Protocol
 
 import structlog
-from langchain_core.messages import BaseMessage, HumanMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, ToolMessage
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.types import StateSnapshot
 
 from brain_agent.errors import ConfigurationError, ThreadBusyError
 from brain_agent.graph.builder import AgentGraph
+from brain_agent.graph.nodes import TOOLS_NODE
 from brain_agent.graph.retry import is_transient_error
 from brain_agent.graph.state import AgentState
 from brain_agent.persistence.runs import RunLedger
@@ -42,6 +43,20 @@ def default_owner_id() -> str:
     return f"{socket.gethostname()}-{os.getpid()}-{uuid.uuid4().hex[:8]}"
 
 
+class _RunRecordView(Protocol):
+    @property
+    def status(self) -> str: ...
+
+    @property
+    def last_error(self) -> str | None: ...
+
+
+class _LookupLedger(RunLedger, Protocol):
+    """A :class:`RunLedger` that can also read a run back (as ``RunRegistry`` does)."""
+
+    async def get(self, thread_id: str) -> _RunRecordView | None: ...
+
+
 class AgentRunner:
     """Runs the agent graph per conversation thread with synchronous checkpointing.
 
@@ -63,6 +78,11 @@ class AgentRunner:
     * anything else -> the run is marked ``failed`` with the error, since retrying a
       deterministic failure cannot help.
 
+    A thread whose pending work belongs to a ``failed`` run is not wedged: the next
+    :meth:`run` closes its dangling tool calls with error ``ToolMessage``s and starts the new
+    turn. Without a registry a failure cannot be told apart from live work, so pending work
+    always raises :class:`ThreadBusyError`.
+
     Cancellation (``CancelledError``, e.g. shutdown) is not recorded: the run stays
     ``running`` and is recovered once the lease expires.
     """
@@ -71,7 +91,7 @@ class AgentRunner:
         self,
         graph: AgentGraph,
         *,
-        runs: RunLedger | None = None,
+        runs: _LookupLedger | None = None,
         owner_id: str | None = None,
         lease_seconds: float = DEFAULT_LEASE_SECONDS,
         heartbeat_interval: float | None = None,
@@ -95,16 +115,44 @@ class AgentRunner:
         """Send a user message on ``thread_id`` and run the agent until it stops.
 
         Raises:
-            ThreadBusyError: if the thread has unfinished work; :meth:`resume` it first.
+            ThreadBusyError: if the thread has unfinished work that is not a ``failed`` run
+                (or no registry is configured); :meth:`resume` it first.
         """
         config = _thread_config(thread_id)
         pending = await self._graph.aget_state(config)
         if pending.next:
-            raise ThreadBusyError(thread_id, tuple(pending.next))
+            record = await self._runs.get(thread_id) if self._runs is not None else None
+            if record is None or record.status != "failed":
+                raise ThreadBusyError(thread_id, tuple(pending.next))
+            await self._abandon_failed_work(thread_id, config, pending, record.last_error)
         # A new user message starts a new run, so the step budget starts again.
         update: AgentState = {"messages": [HumanMessage(content=message)], "step_count": 0}
         await self._execute(thread_id, update, reset_attempts=True)
         return await self._finish(thread_id)
+
+    async def _abandon_failed_work(
+        self,
+        thread_id: str,
+        config: RunnableConfig,
+        snapshot: StateSnapshot,
+        last_error: str | None,
+    ) -> None:
+        """Fix forward: answer unanswered tool calls with an error so the thread is usable."""
+        messages: list[BaseMessage] = snapshot.values.get("messages", [])
+        answered = {m.tool_call_id for m in messages if isinstance(m, ToolMessage)}
+        last_ai = next((m for m in reversed(messages) if isinstance(m, AIMessage)), None)
+        dangling = [c for c in (last_ai.tool_calls if last_ai else []) if c["id"] not in answered]
+        reason = last_error or "unknown error"
+        closing = [
+            ToolMessage(
+                tool_call_id=str(call["id"]),
+                content=f"Tool execution failed: {reason}; the run was abandoned.",
+                status="error",
+            )
+            for call in dangling
+        ]
+        logger.warning("failed_run_abandoned", thread_id=thread_id, closed_tool_calls=len(closing))
+        await self._graph.aupdate_state(config, {"messages": closing}, as_node=TOOLS_NODE)
 
     async def resume(self, thread_id: str) -> RunResult:
         """Continue an unfinished run from its last checkpoint; no-op if nothing is pending."""

@@ -331,3 +331,77 @@ async def test_resume_with_nothing_pending_closes_a_stale_running_row() -> None:
 
     assert ledger.records["thread-1"].status == "completed"
     assert model.calls == 1
+
+
+def _assert_every_tool_call_answered(messages: list[BaseMessage]) -> None:
+    answered = {m.tool_call_id for m in messages if isinstance(m, ToolMessage)}
+    asked = {c["id"] for m in messages if isinstance(m, AIMessage) for c in m.tool_calls}
+    assert asked <= answered
+
+
+async def test_run_after_permanent_failure_closes_dangling_tool_call() -> None:
+    ledger = FakeRunLedger()
+    checkpointer = InMemorySaver()
+
+    @tool
+    def broken(query: str) -> str:
+        """Fail permanently."""
+        raise ValueError("bad input")
+
+    first = ScriptedChatModel(script=[tool_call("broken", {"query": "x"}, "call-1")])
+    with pytest.raises(ValueError, match="bad input"):
+        await _ledger_runner(first, ledger, [broken], checkpointer).run("thread-1", "go")
+
+    second = ScriptedChatModel(script=[AIMessage(content="sorry about that")])
+    result = await _ledger_runner(second, ledger, [broken], checkpointer).run("thread-1", "again")
+
+    assert result.status == "completed"
+    assert result.last_message == "sorry about that"
+    seen = second.inputs[0]
+    _assert_every_tool_call_answered(seen)
+    closing = next(m for m in seen if isinstance(m, ToolMessage))
+    assert (closing.tool_call_id, closing.status) == ("call-1", "error")
+    assert "bad input" in closing.text
+    assert seen[-1].text == "again"
+    assert ledger.records["thread-1"].status == "completed"
+
+
+async def test_run_after_poisoned_run_closes_dangling_tool_call() -> None:
+    ledger = FakeRunLedger()
+    checkpointer = InMemorySaver()
+
+    @tool
+    def flaky(query: str) -> str:
+        """Fail like a network blip."""
+        raise ConnectionError("db down")
+
+    first = ScriptedChatModel(script=[tool_call("flaky", {"query": "x"}, "call-1")])
+    with pytest.raises(ConnectionError):
+        await _ledger_runner(first, ledger, [flaky], checkpointer).run("thread-1", "go")
+    ledger.expire("thread-1")
+    assert await ledger.claim_orphans("owner-1", 30, 5, max_attempts=0) == []
+    assert ledger.records["thread-1"].status == "failed"
+
+    second = ScriptedChatModel(script=[AIMessage(content="recovered")])
+    result = await _ledger_runner(second, ledger, [flaky], checkpointer).run("thread-1", "again")
+
+    assert result.last_message == "recovered"
+    _assert_every_tool_call_answered(second.inputs[0])
+
+
+async def test_run_on_running_thread_with_pending_work_is_still_busy() -> None:
+    ledger = FakeRunLedger()
+    checkpointer = InMemorySaver()
+
+    @tool
+    def flaky(query: str) -> str:
+        """Fail like a network blip."""
+        raise ConnectionError("db down")
+
+    model = ScriptedChatModel(script=[tool_call("flaky", {"query": "x"}, "call-1")])
+    runner = _ledger_runner(model, ledger, [flaky], checkpointer)
+    with pytest.raises(ConnectionError):
+        await runner.run("thread-1", "go")
+
+    with pytest.raises(ThreadBusyError):
+        await runner.run("thread-1", "again")
