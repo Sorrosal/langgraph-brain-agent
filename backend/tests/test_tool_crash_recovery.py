@@ -12,7 +12,7 @@ import pytest
 from langchain_core.messages import AIMessage
 
 from brain_agent.graph.builder import build_graph
-from brain_agent.graph.nodes import TOOLS_NODE
+from brain_agent.graph.nodes import RESOLVE_NODE, TOOLS_NODE
 from brain_agent.hitl.models import ConfirmDone, UncertainExecutionInterrupt
 from brain_agent.persistence.postgres import Persistence
 from brain_agent.runtime.recovery import RecoveryWorker
@@ -113,13 +113,13 @@ async def test_crash_after_side_effect_pauses_for_a_human_instead_of_sending_aga
 
     assert _side_effects(side_effects_url) == ["ops@example.com"]  # not sent again
     paused = await runner.resume(thread_id)  # reconciles, no re-run
-    assert paused.status == "interrupted" and paused.next_nodes == (TOOLS_NODE,)
+    assert paused.status == "interrupted" and paused.next_nodes == (RESOLVE_NODE,)
     assert isinstance(paused.pending_interrupt, UncertainExecutionInterrupt)
-    assert paused.pending_interrupt.args == EMAIL_ARGS
+    assert paused.pending_interrupt.actions[0].args == EMAIL_ARGS
     row = await persistence.runs.get(thread_id)
     assert row is not None and (row.status, row.owner) == ("interrupted", None)
 
-    done = await runner.resolve_uncertain(thread_id, ConfirmDone())
+    done = await runner.resolve_uncertain(thread_id, {"call-1": ConfirmDone()})
 
     assert (done.status, done.last_message) == ("completed", "Emailed.")
     assert _side_effects(side_effects_url) == ["ops@example.com"]

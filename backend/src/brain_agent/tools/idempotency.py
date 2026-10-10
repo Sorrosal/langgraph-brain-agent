@@ -10,7 +10,8 @@ its side effect (sent an email) could do it again. Every call is therefore recor
 * ``started`` -> the previous process died mid-execution and the outcome is *unknown*. If the
   tool declares ``metadata["retry_safe"] = True`` (the provider deduplicates on the key from
   :func:`current_idempotency_key`) it runs again with the same key. Otherwise a human decides
-  (:class:`UncertainExecutionInterrupt`): ``confirm_done``, ``retry`` or ``skip``.
+  (:class:`UncertainExecutionInterrupt`, raised by the ``resolve_uncertain`` node, never by the
+  tools node): ``confirm_done``, ``retry`` (recorded as ``retry_authorized``) or ``skip``.
 
 The same applies when a stored record's args hash differs from the call's: the key is per
 tool call id, so that indicates a bug and is escalated instead of trusted.
@@ -31,14 +32,16 @@ from langchain_core.tools import BaseTool
 from langgraph.errors import GraphBubbleUp
 from langgraph.prebuilt import ToolNode
 from langgraph.prebuilt.tool_node import ToolCallRequest
-from langgraph.types import Command, interrupt
+from langgraph.types import Command, Send, interrupt
 
 from brain_agent.errors import ConfigurationError, UncertainExecutionError
+from brain_agent.graph.nodes import TOOLS_NODE
 from brain_agent.hitl.models import (
-    UNCERTAIN_DECISION,
     ConfirmDone,
     Retry,
+    UncertainAction,
     UncertainExecutionInterrupt,
+    UncertainResponse,
 )
 from brain_agent.persistence.tool_ledger import ExecutionRecord, ToolLedger
 
@@ -155,42 +158,87 @@ def make_execution_wrapper(
     return wrapper
 
 
+async def _uncertain_calls(
+    calls: Sequence[ToolCall],
+    tools_by_name: dict[str, BaseTool],
+    ledger: ToolLedger,
+    thread_id: str,
+) -> list[tuple[ToolCall, str, str]]:
+    """Calls whose earlier outcome is unknown, with their ledger key and the reason."""
+    found = []
+    for call in calls:
+        record = await ledger.get(idempotency_key(thread_id, str(call["id"])))
+        digest = args_hash(call["args"])
+        reason = (
+            uncertain_reason(record, tools_by_name.get(call["name"]), digest) if record else None
+        )
+        if record and reason:
+            found.append((call, record.idempotency_key, reason))
+    return found
+
+
+def make_resolve_uncertain_node(tools: Sequence[BaseTool], ledger: ToolLedger) -> ToolsNode:
+    """Node that asks a human about calls whose earlier outcome is unknown, before ``tools``.
+
+    It has its own task, hence its own resume values, isolated from any ``interrupt()`` a tool
+    raises. It interrupts at most once, with every uncertain call; the answer is keyed by
+    action id. Decisions are applied idempotently, so re-running the node after a partial
+    application only handles the calls still uncertain.
+    """
+    tools_by_name = {tool.name: tool for tool in tools}
+
+    async def resolve_uncertain(state: Any, config: RunnableConfig) -> Any:
+        thread_id = _thread_id(config)
+        uncertain = await _uncertain_calls(state, tools_by_name, ledger, thread_id)
+        if uncertain:
+            actions = [
+                UncertainAction(
+                    action_id=str(call["id"]),
+                    tool_name=call["name"],
+                    args=call["args"],
+                    message=reason,
+                )
+                for call, _key, reason in uncertain
+            ]
+            raw = interrupt(UncertainExecutionInterrupt(actions=actions).model_dump())
+            response = UncertainResponse.model_validate(raw)
+            response.ensure_covers([a.action_id for a in actions], [str(c["id"]) for c in state])
+            for call, key, _reason in uncertain:
+                await _apply_decision(ledger, key, args_hash(call["args"]), response, call)
+        return Command(goto=Send(TOOLS_NODE, state))
+
+    return resolve_uncertain
+
+
+async def _apply_decision(
+    ledger: ToolLedger, key: str, digest: str, response: UncertainResponse, call: ToolCall
+) -> None:
+    decision = response.decisions[str(call["id"])]
+    if isinstance(decision, Retry):
+        await ledger.authorize_retry(key, digest)
+        return
+    await ledger.restart(key, digest)
+    if isinstance(decision, ConfirmDone):
+        content = decision.message or CONFIRMED_RESULT
+        await ledger.complete(key, {"content": content, "status": "success"})
+    else:
+        await ledger.fail(key, SKIPPED_ERROR)
+
+
 def make_tools_node(tools: Sequence[BaseTool], ledger: ToolLedger) -> ToolsNode:
     """Tool node with exactly-once execution; its input is the list of calls sent to it.
 
-    Before running anything it asks a human about every call whose earlier outcome is unknown
-    (one interrupt each, in call order). Nothing in the ledger changes until every question is
-    answered, so re-running the node on resume asks the same questions in the same order.
+    It never asks a human itself (``interrupt()`` positions would drift once the ledger
+    changes). If an unresolved uncertain call reaches it, e.g. after a crash mid-execution, it
+    does nothing and the graph routes back to ``resolve_uncertain``; the execution wrapper is
+    the final backstop.
     """
     tools_by_name = {tool.name: tool for tool in tools}
     tool_node = ToolNode(tools, awrap_tool_call=make_execution_wrapper(ledger))
 
     async def tools_node(state: Any, config: RunnableConfig) -> Any:
-        thread_id = _thread_id(config)
-        decided: list[tuple[str, str, str, Any]] = []
-        for call in state:
-            key = idempotency_key(thread_id, str(call["id"]))
-            digest = args_hash(call["args"])
-            record = await ledger.get(key)
-            if record is None:
-                continue
-            reason = uncertain_reason(record, tools_by_name.get(call["name"]), digest)
-            if reason is None:
-                continue
-            payload = UncertainExecutionInterrupt(
-                action_id=str(call["id"]), tool_name=call["name"], args=call["args"], message=reason
-            )
-            decision = UNCERTAIN_DECISION.validate_python(interrupt(payload.model_dump()))
-            decided.append((key, call["name"], digest, decision))
-        for key, _name, digest, decision in decided:
-            await ledger.restart(key, digest)
-            if isinstance(decision, ConfirmDone):
-                content = decision.message or CONFIRMED_RESULT
-                await ledger.complete(key, {"content": content, "status": "success"})
-            elif isinstance(decision, Retry):
-                await ledger.fail(key, "Retry requested by human")
-            else:
-                await ledger.fail(key, SKIPPED_ERROR)
+        if await _uncertain_calls(state, tools_by_name, ledger, _thread_id(config)):
+            return {}  # nothing ran; the router sends the batch back
         return await tool_node.ainvoke(state, config)
 
     return tools_node

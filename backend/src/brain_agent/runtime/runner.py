@@ -5,7 +5,7 @@ import contextlib
 import os
 import socket
 import uuid
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from typing import Any, Literal, TypeVar
 
@@ -33,6 +33,7 @@ from brain_agent.hitl.models import (
     Retry,
     Skip,
     UncertainExecutionInterrupt,
+    UncertainResponse,
 )
 from brain_agent.persistence.runs import RunLedger
 
@@ -214,18 +215,21 @@ class AgentRunner:
         return await self._resume_paused(thread_id, ApprovalInterrupt, command)
 
     async def resolve_uncertain(
-        self, thread_id: str, decision: ConfirmDone | Retry | Skip
+        self, thread_id: str, decisions: Mapping[str, ConfirmDone | Retry | Skip]
     ) -> RunResult:
-        """Answer the paused uncertain tool execution (see :class:`UncertainExecutionInterrupt`).
+        """Answer the paused uncertain tool executions, one decision per action id.
+
+        See :class:`UncertainExecutionInterrupt`.
 
         Raises:
             NoPendingApprovalError: the thread is not paused on an uncertain execution.
+            InvalidApprovalError: a pending action has no decision, or an id is unknown.
             ThreadBusyError: another call or process is already resuming the thread.
         """
         return await self._resume_paused(
             thread_id,
             UncertainExecutionInterrupt,
-            lambda _pending: Command(resume=decision.model_dump()),
+            lambda pending: _uncertain_command(pending, decisions),
         )
 
     async def _resume_paused(
@@ -401,6 +405,15 @@ class AgentRunner:
             pending_approval=approval if isinstance(approval, ApprovalInterrupt) else None,
             pending_interrupt=approval,
         )
+
+
+def _uncertain_command(
+    pending: UncertainExecutionInterrupt, decisions: Mapping[str, ConfirmDone | Retry | Skip]
+) -> Command[Any]:
+    ids = [action.action_id for action in pending.actions]
+    response = UncertainResponse(decisions=dict(decisions))
+    response.ensure_covers(ids, ids)
+    return Command(resume=response.model_dump())
 
 
 def _thread_config(thread_id: str) -> RunnableConfig:

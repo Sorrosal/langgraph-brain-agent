@@ -4,10 +4,10 @@ The interrupt payload is persisted in the checkpoint and the node that raises it
 resume, so it must be a pure function of the graph state: no timestamps, no randomness.
 """
 
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, Field, TypeAdapter
+from pydantic import BaseModel, Field
 
 from brain_agent.errors import InvalidApprovalError
 
@@ -77,16 +77,22 @@ class ApprovalResponse(BaseModel):
             raise InvalidApprovalError(f"Decision for unknown actions: {', '.join(unknown)}")
 
 
-class UncertainExecutionInterrupt(BaseModel):
-    """Interrupt payload: a tool call that may already have produced its side effect."""
+class UncertainAction(BaseModel):
+    """A tool call that may already have produced its side effect."""
 
-    kind: Literal["uncertain_execution"] = "uncertain_execution"
     action_id: str
-    """The tool call id."""
+    """The tool call id; decisions are keyed by it."""
     tool_name: str
     args: dict[str, Any]
     message: str
     """Why the outcome is unknown."""
+
+
+class UncertainExecutionInterrupt(BaseModel):
+    """Interrupt payload: every call of the batch whose outcome is unknown (raised once)."""
+
+    kind: Literal["uncertain_execution"] = "uncertain_execution"
+    actions: list[UncertainAction]
 
 
 PendingInterrupt = ApprovalInterrupt | UncertainExecutionInterrupt
@@ -113,4 +119,22 @@ class Skip(BaseModel):
 
 
 UncertainDecision = Annotated[ConfirmDone | Retry | Skip, Field(discriminator="type")]
-UNCERTAIN_DECISION: TypeAdapter[ConfirmDone | Retry | Skip] = TypeAdapter(UncertainDecision)
+
+
+class UncertainResponse(BaseModel):
+    """Human decisions keyed by action id (never positional)."""
+
+    decisions: dict[str, UncertainDecision]
+
+    def ensure_covers(self, required: Collection[str], universe: Collection[str]) -> None:
+        """Require a decision for every id in ``required``, and none outside ``universe``.
+
+        Raises:
+            InvalidApprovalError: a required id has no decision, or a decision id is unknown.
+        """
+        missing = sorted(set(required) - self.decisions.keys())
+        unknown = sorted(self.decisions.keys() - set(universe))
+        if missing:
+            raise InvalidApprovalError(f"Decision missing for actions: {', '.join(missing)}")
+        if unknown:
+            raise InvalidApprovalError(f"Decision for unknown actions: {', '.join(unknown)}")

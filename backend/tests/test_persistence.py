@@ -170,8 +170,14 @@ async def test_lease_loss_stops_a_real_run_and_leaves_the_new_owner_alone(
     )
     task = asyncio.create_task(runner.run("t1", "go"))
     await asyncio.wait_for(started.wait(), timeout=10)
-    await _expire_lease(persistence, "t1")
-    fresh = await persistence.runs.mark_running("t1", "new", 30)
+    # The old owner's heartbeat can renew the lease between expiry and takeover: expire again.
+    fresh = None
+    while fresh is None:
+        await _expire_lease(persistence, "t1")
+        try:
+            fresh = await persistence.runs.mark_running("t1", "new", 30)
+        except ThreadBusyError:
+            await asyncio.sleep(0)
 
     with pytest.raises(LeaseLostError):
         await asyncio.wait_for(task, timeout=10)

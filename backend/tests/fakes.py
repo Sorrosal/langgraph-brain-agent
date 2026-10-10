@@ -230,6 +230,15 @@ class InMemoryToolLedger:
             attempts=old.attempts + 1,
         )
 
+    async def authorize_retry(self, key: str, args_hash: str) -> None:
+        self.records[key] = replace(
+            self.records[key],
+            status="retry_authorized",
+            args_hash=args_hash,
+            result=None,
+            error=None,
+        )
+
     async def get(self, key: str) -> ExecutionRecord | None:
         record = self.records.get(key)
         return replace(record, is_new=False) if record else None

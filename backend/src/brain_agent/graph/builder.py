@@ -18,17 +18,18 @@ from brain_agent.graph.nodes import (
     APPROVAL_NODE,
     DEFAULT_SYSTEM_PROMPT,
     REASON_NODE,
+    RESOLVE_NODE,
     TOOLS_NODE,
     make_approval_gate,
+    make_gate_router,
     make_reason_node,
-    route_after_gate,
     route_after_reason,
 )
 from brain_agent.graph.retry import is_transient_error
 from brain_agent.graph.state import AgentState
 from brain_agent.hitl.policy import ApprovalPolicy, MetadataApprovalPolicy
 from brain_agent.persistence.tool_ledger import ToolLedger
-from brain_agent.tools.idempotency import make_tools_node
+from brain_agent.tools.idempotency import make_resolve_uncertain_node, make_tools_node
 
 AgentGraph = CompiledStateGraph[AgentState, None, AgentState, AgentState]
 
@@ -47,10 +48,10 @@ DEFAULT_RETRY_POLICY = RetryPolicy(
 def recursion_limit_for(max_steps: int) -> int:
     """LangGraph superstep budget that lets the step guard, not recursion, end a run.
 
-    Each step is a ``reason``, an ``approval_gate`` and a ``tools`` superstep, followed by one
-    final ``reason``.
+    Each step is a ``reason``, an ``approval_gate``, a ``resolve_uncertain`` and a ``tools``
+    superstep, followed by one final ``reason``.
     """
-    return 3 * max_steps + 5
+    return 4 * max_steps + 5
 
 
 def build_graph(
@@ -92,8 +93,15 @@ def build_graph(
             TOOLS_NODE, make_tools_node(tools, tool_ledger) if tool_ledger else ToolNode(tools)
         )
         builder.add_conditional_edges(REASON_NODE, route_after_reason, [APPROVAL_NODE, END])
-        builder.add_conditional_edges(APPROVAL_NODE, route_after_gate, [TOOLS_NODE, REASON_NODE])
-        builder.add_edge(TOOLS_NODE, REASON_NODE)
+        if tool_ledger:
+            builder.add_node(RESOLVE_NODE, make_resolve_uncertain_node(tools, tool_ledger))
+        first = RESOLVE_NODE if tool_ledger else TOOLS_NODE
+        router = make_gate_router(RESOLVE_NODE)
+        builder.add_conditional_edges(APPROVAL_NODE, make_gate_router(first), [first, REASON_NODE])
+        if tool_ledger:  # calls left unanswered: an uncertain call needs a human first
+            builder.add_conditional_edges(TOOLS_NODE, router, [RESOLVE_NODE, REASON_NODE])
+        else:
+            builder.add_edge(TOOLS_NODE, REASON_NODE)
     else:
         builder.add_edge(REASON_NODE, END)
 

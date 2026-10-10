@@ -13,7 +13,7 @@ from psycopg.rows import DictRow
 from psycopg.types.json import Jsonb
 from psycopg_pool import AsyncConnectionPool
 
-ExecutionStatus = Literal["started", "succeeded", "failed"]
+ExecutionStatus = Literal["started", "succeeded", "failed", "retry_authorized"]
 
 MIGRATIONS = (
     """
@@ -24,7 +24,7 @@ CREATE TABLE IF NOT EXISTS tool_executions (
     args_hash text NOT NULL,
     status text NOT NULL
         CONSTRAINT tool_executions_status_check
-        CHECK (status IN ('started', 'succeeded', 'failed')),
+        CHECK (status IN ('started', 'succeeded', 'failed', 'retry_authorized')),
     result jsonb,
     error text,
     attempts integer NOT NULL DEFAULT 1,
@@ -33,6 +33,11 @@ CREATE TABLE IF NOT EXISTS tool_executions (
 )
 """,
     "CREATE INDEX IF NOT EXISTS tool_executions_thread_idx ON tool_executions (thread_id)",
+    "ALTER TABLE tool_executions DROP CONSTRAINT IF EXISTS tool_executions_status_check",
+    """
+ALTER TABLE tool_executions ADD CONSTRAINT tool_executions_status_check
+    CHECK (status IN ('started', 'succeeded', 'failed', 'retry_authorized'))
+""",
 )
 
 _COLUMNS = "idempotency_key, thread_id, tool_name, args_hash, status, result, error, attempts"
@@ -58,6 +63,12 @@ WHERE idempotency_key = %(key)s
 _RESTART = """
 UPDATE tool_executions SET status = 'started', args_hash = %(args_hash)s, result = NULL,
     error = NULL, attempts = attempts + 1, updated_at = now()
+WHERE idempotency_key = %(key)s
+"""
+
+_AUTHORIZE_RETRY = """
+UPDATE tool_executions SET status = 'retry_authorized', args_hash = %(args_hash)s, result = NULL,
+    error = NULL, updated_at = now()
 WHERE idempotency_key = %(key)s
 """
 
@@ -95,6 +106,10 @@ class ToolLedger(Protocol):
 
     async def restart(self, key: str, args_hash: str) -> None:
         """Back to ``started`` for another attempt (bumps ``attempts``, adopts ``args_hash``)."""
+        ...
+
+    async def authorize_retry(self, key: str, args_hash: str) -> None:
+        """Record the human decision to run the call again (adopts ``args_hash``)."""
         ...
 
     async def get(self, key: str) -> ExecutionRecord | None: ...
@@ -141,6 +156,10 @@ class ToolExecutionLedger:
     async def restart(self, key: str, args_hash: str) -> None:
         async with self._pool.connection() as conn:
             await conn.execute(_RESTART.encode(), {"key": key, "args_hash": args_hash})
+
+    async def authorize_retry(self, key: str, args_hash: str) -> None:
+        async with self._pool.connection() as conn:
+            await conn.execute(_AUTHORIZE_RETRY.encode(), {"key": key, "args_hash": args_hash})
 
     async def get(self, key: str) -> ExecutionRecord | None:
         async with self._pool.connection() as conn:

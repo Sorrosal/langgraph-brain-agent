@@ -1,6 +1,6 @@
 """Graph nodes and routing."""
 
-from collections.abc import Awaitable, Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from typing import Any, Protocol
 
 import structlog
@@ -19,6 +19,7 @@ logger = structlog.get_logger(__name__)
 
 REASON_NODE = "reason"
 APPROVAL_NODE = "approval_gate"
+RESOLVE_NODE = "resolve_uncertain"
 TOOLS_NODE = "tools"
 
 DEFAULT_SYSTEM_PROMPT = (
@@ -175,7 +176,11 @@ def _apply_decisions(
     return {"messages": messages, "approvals": approvals}
 
 
-def route_after_gate(state: AgentState) -> list[Send] | str:
-    """Run the calls still unanswered on the tools node; with none left, reason again."""
-    calls = pending_tool_calls(state["messages"])
-    return [Send(TOOLS_NODE, calls)] if calls else REASON_NODE
+def make_gate_router(target: str) -> Callable[[AgentState], list[Send] | str]:
+    """Route to ``target`` with the calls still unanswered; with none left, reason again."""
+
+    def route_after_gate(state: AgentState) -> list[Send] | str:
+        calls = pending_tool_calls(state["messages"])
+        return [Send(target, calls)] if calls else REASON_NODE
+
+    return route_after_gate

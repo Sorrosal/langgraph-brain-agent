@@ -9,8 +9,10 @@ from brain_agent.hitl.models import (
     PendingInterrupt,
     Retry,
     Skip,
+    UncertainAction,
     UncertainDecision,
     UncertainExecutionInterrupt,
+    UncertainResponse,
 )
 from brain_agent.hitl.policy import (
     ApprovalPolicy,
@@ -32,6 +34,8 @@ __all__ = [
     "PolicyVerdict",
     "Retry",
     "Skip",
+    "UncertainAction",
     "UncertainDecision",
     "UncertainExecutionInterrupt",
+    "UncertainResponse",
 ]

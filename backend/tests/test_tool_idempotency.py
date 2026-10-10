@@ -3,11 +3,13 @@
 from typing import Any
 
 import pytest
-from langchain_core.messages import AIMessage, ToolMessage
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import BaseTool, tool
 from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.types import Command, interrupt
 
-from brain_agent.errors import NoPendingApprovalError
+from brain_agent.errors import InvalidApprovalError, NoPendingApprovalError
 from brain_agent.graph.builder import build_graph
 from brain_agent.hitl.models import ConfirmDone, Retry, Skip, UncertainExecutionInterrupt
 from brain_agent.runtime.runner import AgentRunner, RunResult
@@ -132,12 +134,13 @@ async def test_started_without_retry_safe_escalates_to_a_human() -> None:
     result = await _runner(mailer, ledger).run(THREAD, "mail")
 
     pending = _uncertain(result)
-    assert (pending.kind, pending.action_id, pending.tool_name) == (
+    [action] = pending.actions
+    assert (pending.kind, action.action_id, action.tool_name) == (
         "uncertain_execution",
         "call-1",
         "send_email",
     )
-    assert pending.args == ARGS and pending.message
+    assert action.args == ARGS and action.message
     assert mailer.sent == []
 
 
@@ -147,7 +150,7 @@ async def test_confirm_done_records_success_without_executing() -> None:
     runner = _runner(mailer, ledger)
     _uncertain(await runner.run(THREAD, "mail"))
 
-    result = await runner.resolve_uncertain(THREAD, ConfirmDone())
+    result = await runner.resolve_uncertain(THREAD, {"call-1": ConfirmDone()})
 
     assert (result.status, result.last_message) == ("completed", "Sent.")
     assert mailer.sent == []
@@ -163,7 +166,9 @@ async def test_confirm_done_accepts_a_custom_message() -> None:
     runner = _runner(mailer, ledger)
     await runner.run(THREAD, "mail")
 
-    await runner.resolve_uncertain(THREAD, ConfirmDone(message="Seen in the sent folder"))
+    await runner.resolve_uncertain(
+        THREAD, {"call-1": ConfirmDone(message="Seen in the sent folder")}
+    )
 
     [message] = await _tool_messages(runner)
     assert message.text == "Seen in the sent folder"
@@ -175,7 +180,7 @@ async def test_retry_executes_the_tool_once() -> None:
     runner = _runner(mailer, ledger)
     await runner.run(THREAD, "mail")
 
-    result = await runner.resolve_uncertain(THREAD, Retry())
+    result = await runner.resolve_uncertain(THREAD, {"call-1": Retry()})
 
     assert result.status == "completed"
     assert mailer.sent == ["a@example.com"] and mailer.keys == [KEY]
@@ -189,7 +194,7 @@ async def test_skip_answers_with_an_error_and_never_executes() -> None:
     runner = _runner(mailer, ledger)
     await runner.run(THREAD, "mail")
 
-    result = await runner.resolve_uncertain(THREAD, Skip())
+    result = await runner.resolve_uncertain(THREAD, {"call-1": Skip()})
 
     assert result.status == "completed"
     assert mailer.sent == []
@@ -205,7 +210,7 @@ async def test_args_hash_mismatch_is_treated_as_uncertain() -> None:
 
     result = await _runner(mailer, ledger).run(THREAD, "mail")
 
-    assert "differ" in _uncertain(result).message
+    assert "differ" in _uncertain(result).actions[0].message
     assert mailer.sent == []
 
 
@@ -214,27 +219,92 @@ async def test_resolve_uncertain_requires_a_pending_uncertain_execution() -> Non
     await runner.run(THREAD, "hello")
 
     with pytest.raises(NoPendingApprovalError):
-        await runner.resolve_uncertain(THREAD, Retry())
+        await runner.resolve_uncertain(THREAD, {"call-1": Retry()})
 
 
-async def test_two_uncertain_calls_are_asked_one_at_a_time_in_call_order() -> None:
+def _batch(*calls: tuple[str, str, dict[str, Any]]) -> AIMessage:
+    tool_calls = [{"name": name, "args": args, "id": call_id} for call_id, name, args in calls]
+    return AIMessage(content="", tool_calls=tool_calls)
+
+
+async def _seed_batch(ledger: InMemoryToolLedger, *ids: str) -> None:
+    for call_id in ids:
+        await ledger.begin(f"{THREAD}:{call_id}", THREAD, "send_email", args_hash({"to": call_id}))
+
+
+MAIL_AB = _batch(("a", "send_email", {"to": "a"}), ("b", "send_email", {"to": "b"}))
+CONFIG: RunnableConfig = {"configurable": {"thread_id": THREAD}}
+
+
+async def test_two_uncertain_calls_are_asked_once_and_answered_by_id() -> None:
     mailer, ledger = Mailer(), InMemoryToolLedger()
-    batch = AIMessage(
-        content="",
-        tool_calls=[
-            {"name": "send_email", "args": {"to": "a"}, "id": "call-1"},
-            {"name": "send_email", "args": {"to": "b"}, "id": "call-2"},
-        ],
-    )
-    for call_id, to in (("call-1", "a"), ("call-2", "b")):
-        await ledger.begin(f"{THREAD}:{call_id}", THREAD, "send_email", args_hash({"to": to}))
-    runner = _runner(mailer, ledger, [batch, AIMessage(content="Done.")])
+    await _seed_batch(ledger, "a", "b")
+    runner = _runner(mailer, ledger, [MAIL_AB, AIMessage(content="Done.")])
 
-    first = _uncertain(await runner.run(THREAD, "mail"))
-    second = _uncertain(await runner.resolve_uncertain(THREAD, ConfirmDone()))
-    final = await runner.resolve_uncertain(THREAD, Skip())
+    pending = _uncertain(await runner.run(THREAD, "mail"))
+    with pytest.raises(InvalidApprovalError, match="missing"):
+        await runner.resolve_uncertain(THREAD, {"b": Skip()})
+    with pytest.raises(InvalidApprovalError, match="unknown"):
+        await runner.resolve_uncertain(THREAD, {"a": Skip(), "b": Skip(), "z": Skip()})
+    final = await runner.resolve_uncertain(THREAD, {"b": Skip(), "a": ConfirmDone()})
 
-    assert (first.action_id, second.action_id) == ("call-1", "call-2")
+    assert [a.action_id for a in pending.actions] == ["a", "b"]
     assert final.status == "completed" and mailer.sent == []
     texts = {m.tool_call_id: m.text for m in await _tool_messages(runner)}
-    assert texts == {"call-1": "Confirmed done by human", "call-2": "Skipped by human"}
+    assert texts == {"a": "Confirmed done by human", "b": "Skipped by human"}
+
+
+class FailOnceLedger(InMemoryToolLedger):
+    """Crashes the first retry authorisation: decisions are only partially applied."""
+
+    armed = True
+
+    async def authorize_retry(self, key: str, args_hash: str) -> None:
+        if self.armed:
+            self.armed = False
+            raise RuntimeError("process died mid-decision")
+        await super().authorize_retry(key, args_hash)
+
+
+async def test_reexecuted_resolution_applies_remaining_decisions_by_id() -> None:
+    mailer, ledger = Mailer(), FailOnceLedger()
+    await _seed_batch(ledger, "a", "b")
+    model = ScriptedChatModel(script=[MAIL_AB, AIMessage(content="Done.")])
+    graph = build_graph(model, [mailer.tool], checkpointer=InMemorySaver(), tool_ledger=ledger)
+    await graph.ainvoke({"messages": [HumanMessage("go")]}, CONFIG)
+
+    # "a" is confirmed, then the node dies before "b" (Retry) is authorised.
+    resume: Command[Any] = Command(
+        resume={"decisions": {"a": {"type": "confirm_done"}, "b": {"type": "retry"}}}
+    )
+    with pytest.raises(RuntimeError, match="mid-decision"):
+        await graph.ainvoke(resume, CONFIG)
+    done = await graph.ainvoke(None, CONFIG)  # re-executes with the persisted answer
+
+    assert mailer.sent == ["b"]  # "a" (ConfirmDone) is never retried; "b" runs once
+    texts = {m.tool_call_id: m.text for m in done["messages"] if isinstance(m, ToolMessage)}
+    assert texts == {"a": "Confirmed done by human", "b": "sent to b"}
+
+
+async def test_a_tool_interrupt_in_the_batch_gets_its_own_resume_value() -> None:
+    mailer, ledger = Mailer(), InMemoryToolLedger()
+
+    @tool
+    def ask(question: str) -> str:
+        """Ask the user something."""
+        return f"answer: {interrupt(question)}"
+
+    await _seed_batch(ledger, "a")
+    batch = _batch(("a", "send_email", {"to": "a"}), ("q", "ask", {"question": "ok?"}))
+    model = ScriptedChatModel(script=[batch, AIMessage(content="Done.")])
+    graph = build_graph(model, [mailer.tool, ask], checkpointer=InMemorySaver(), tool_ledger=ledger)
+
+    first = await graph.ainvoke({"messages": [HumanMessage("go")]}, CONFIG)
+    assert first["__interrupt__"][0].value["kind"] == "uncertain_execution"
+    second = await graph.ainvoke(Command(resume={"decisions": {"a": {"type": "retry"}}}), CONFIG)
+    assert second["__interrupt__"][0].value == "ok?"  # the tool's own question, not a decision
+    last = await graph.ainvoke(Command(resume="yes"), CONFIG)
+
+    texts = {m.tool_call_id: m.text for m in last["messages"] if isinstance(m, ToolMessage)}
+    assert texts == {"a": "sent to a", "q": "answer: yes"}
+    assert mailer.sent == ["a"]
