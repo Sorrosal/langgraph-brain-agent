@@ -43,6 +43,12 @@ hard_rules:
     action: require_approval
 """
 
+RULES_LOOKUP = """  - id: ask-lookup
+    description: Lookups need approval.
+    when: {tool: lookup}
+    action: require_approval
+"""
+
 CONFIG: Any = {"configurable": {"thread_id": "t"}}
 
 
@@ -328,3 +334,42 @@ def test_composite_with_rules_blocks_even_when_metadata_allows(tmp_path: Path) -
 
 def test_settings_rules_dir_defaults_to_repo_rules() -> None:
     assert Settings().rules_dir == REPO_ROOT / "rules"
+
+
+async def _paused_on_send(tmp_path: Path, calls: list[dict[str, Any]]) -> tuple[Any, Recorder, Any]:
+    (tmp_path / "rules.yaml").write_text(RULES, encoding="utf-8")
+    engine = RulesEngine.from_source(YamlRuleSource(tmp_path))
+    recorder = Recorder()
+    model = ScriptedChatModel(script=[_batch(*calls), AIMessage(content="done")])
+    graph = build_graph(model, recorder.tools, checkpointer=InMemorySaver(), rules=engine)
+    paused = await graph.ainvoke({"messages": [HumanMessage("go")]}, CONFIG)
+    assert [a["action_id"] for a in paused["__interrupt__"][0].value["actions"]] == ["ask"]
+    return graph, recorder, engine
+
+
+def _rewrite_rules(tmp_path: Path, content: str) -> None:
+    (tmp_path / "rules.yaml").write_text(content, encoding="utf-8")
+
+
+async def test_relaxed_rule_before_resume_still_honours_rejection(tmp_path: Path) -> None:
+    graph, recorder, _ = await _paused_on_send(tmp_path, [_call("send_thing", {"n": 1}, "ask")])
+    _rewrite_rules(tmp_path, RULES.replace("tool: send_thing", "tool: nothing"))
+
+    reject: Command[Any] = Command(resume={"decisions": {"ask": {"type": "reject"}}})
+    final = await graph.ainvoke(reject, CONFIG)
+
+    assert recorder.runs == []
+    [message] = [m for m in final["messages"] if isinstance(m, ToolMessage)]
+    assert message.status == "error" and "Rejected by human" in str(message.content)
+
+
+async def test_tightened_rule_before_resume_does_not_break_resume(tmp_path: Path) -> None:
+    calls = [_call("send_thing", {"n": 1}, "ask"), _call("lookup", {"query": "q"}, "auto")]
+    graph, recorder, _ = await _paused_on_send(tmp_path, calls)
+    _rewrite_rules(tmp_path, RULES + RULES_LOOKUP)
+
+    approve: Command[Any] = Command(resume={"decisions": {"ask": {"type": "approve"}}})
+    final = await graph.ainvoke(approve, CONFIG)
+
+    assert sorted(recorder.runs) == ["lookup:q", "send:1"]
+    assert final["messages"][-1].content == "done"

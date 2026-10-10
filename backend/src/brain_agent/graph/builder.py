@@ -19,11 +19,13 @@ from brain_agent.brain.prompt import build_system_prompt
 from brain_agent.brain.rules import RulesEngine
 from brain_agent.graph.nodes import (
     APPROVAL_NODE,
+    AWAIT_NODE,
     DEFAULT_SYSTEM_PROMPT,
     REASON_NODE,
     RESOLVE_NODE,
     TOOLS_NODE,
     make_approval_gate,
+    make_await_approval,
     make_gate_router,
     make_reason_node,
     route_after_reason,
@@ -55,10 +57,10 @@ DEFAULT_RETRY_POLICY = RetryPolicy(
 def recursion_limit_for(max_steps: int) -> int:
     """LangGraph superstep budget that lets the step guard, not recursion, end a run.
 
-    Each step is a ``reason``, an ``approval_gate``, a ``resolve_uncertain`` and a ``tools``
-    superstep, followed by one final ``reason``.
+    Each step is a ``reason``, an ``approval_gate``, an ``await_approval``, a ``resolve_uncertain``
+    and a ``tools`` superstep, followed by one final ``reason``.
     """
-    return 4 * max_steps + 5
+    return 5 * max_steps + 6
 
 
 def build_graph(
@@ -107,6 +109,7 @@ def build_graph(
     if tools:
         gate = make_approval_gate(tools, policy)
         builder.add_node(APPROVAL_NODE, gate)
+        builder.add_node(AWAIT_NODE, make_await_approval())
         builder.add_node(
             TOOLS_NODE, make_tools_node(tools, tool_ledger) if tool_ledger else ToolNode(tools)
         )
@@ -115,7 +118,10 @@ def build_graph(
             builder.add_node(RESOLVE_NODE, make_resolve_uncertain_node(tools, tool_ledger))
         first = RESOLVE_NODE if tool_ledger else TOOLS_NODE
         router = make_gate_router(RESOLVE_NODE)
-        builder.add_conditional_edges(APPROVAL_NODE, make_gate_router(first), [first, REASON_NODE])
+        after_gate = make_gate_router(first)
+        targets = [first, REASON_NODE, AWAIT_NODE]
+        builder.add_conditional_edges(APPROVAL_NODE, after_gate, targets)
+        builder.add_conditional_edges(AWAIT_NODE, after_gate, targets)
         if tool_ledger:  # calls left unanswered: an uncertain call needs a human first
             builder.add_conditional_edges(TOOLS_NODE, router, [RESOLVE_NODE, REASON_NODE])
         else:

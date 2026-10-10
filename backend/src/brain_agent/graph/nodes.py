@@ -19,6 +19,7 @@ logger = structlog.get_logger(__name__)
 
 REASON_NODE = "reason"
 APPROVAL_NODE = "approval_gate"
+AWAIT_NODE = "await_approval"
 RESOLVE_NODE = "resolve_uncertain"
 TOOLS_NODE = "tools"
 
@@ -98,11 +99,9 @@ def pending_tool_calls(messages: Sequence[AnyMessage]) -> list[ToolCall]:
 
 
 def make_approval_gate(tools: Sequence[BaseTool], policy: ApprovalPolicy) -> GateNode:
-    """Create the node that pauses for a human decision on calls the policy flags.
+    """Create the node that evaluates the policy and records verdicts in ``pending_review``.
 
-    The whole tool-call batch waits: nothing runs until every flagged call is decided. On
-    resume LangGraph re-executes this node from its start, so everything before
-    ``interrupt()`` is a pure function of the state (no side effects, no clock).
+    It never interrupts: its write is checkpointed before :func:`make_await_approval` pauses.
     """
     tools_by_name = {tool.name: tool for tool in tools}
 
@@ -111,37 +110,63 @@ def make_approval_gate(tools: Sequence[BaseTool], policy: ApprovalPolicy) -> Gat
         calls = {str(call["id"]): call for call in pending}
         if len(calls) != len(pending):
             return _reject_duplicate_ids(pending)
-        actions = []
         blocked: list[tuple[ToolCall, PolicyVerdict]] = []
+        verdicts: dict[str, dict[str, Any]] = {}
         for call_id, call in calls.items():
             verdict = policy.evaluate(call, tools_by_name.get(call["name"]))
-            if verdict is not None and verdict.blocked:
+            if verdict is None:
+                continue
+            if verdict.blocked:
                 blocked.append((call, verdict))
-            elif verdict is not None:
-                actions.append(
-                    ActionRequest(
-                        action_id=call_id,
-                        tool_name=call["name"],
-                        args=call["args"],
-                        risk=verdict.risk,
-                        reason=verdict.reason,
-                    )
-                )
-        # Pure function of the state, so it is safe to recompute when the node re-runs on resume.
-        refusals = _refuse_blocked(blocked)
-        if not actions:
-            return refusals
+            else:
+                verdicts[call_id] = {
+                    "blocked": False,
+                    "risk": verdict.risk,
+                    "reason": verdict.reason,
+                    "rule_ids": list(verdict.rule_ids),
+                }
+        update = _refuse_blocked(blocked)
+        if verdicts:
+            last_ai = next(m for m in reversed(state["messages"]) if isinstance(m, AIMessage))
+            update["pending_review"] = {"ai_message_id": last_ai.id, "verdicts": verdicts}
+        return update
 
+    return approval_gate
+
+
+def make_await_approval() -> GateNode:
+    """Create the node that pauses for a human decision on the calls in ``pending_review``.
+
+    The whole batch waits. On resume LangGraph re-runs this node from its start, so it only
+    reads the persisted verdicts and never consults the (hot-reloadable) policy.
+    """
+
+    async def await_approval(state: AgentState) -> dict[str, Any]:
+        review = state.get("pending_review") or {}
+        verdicts = review.get("verdicts", {})
+        last_ai = next(
+            m
+            for m in reversed(state["messages"])
+            if isinstance(m, AIMessage) and m.id == review.get("ai_message_id")
+        )
+        calls = {str(c["id"]): c for c in last_ai.tool_calls if str(c["id"]) in verdicts}
+        actions = [
+            ActionRequest(
+                action_id=call_id,
+                tool_name=call["name"],
+                args=call["args"],
+                risk=verdicts[call_id]["risk"],
+                reason=verdicts[call_id]["reason"],
+            )
+            for call_id, call in calls.items()
+        ]
         raw = interrupt(ApprovalInterrupt(actions=actions).model_dump())
         response = ApprovalResponse.model_validate(raw)
         response.ensure_covers(actions)
         decided = _apply_decisions(state, calls, response)
-        return {
-            "messages": [*refusals["messages"], *decided["messages"]],
-            "approvals": [*refusals["approvals"], *decided["approvals"]],
-        }
+        return {**decided, "pending_review": None}
 
-    return approval_gate
+    return await_approval
 
 
 def _refuse_blocked(blocked: list[tuple[ToolCall, PolicyVerdict]]) -> dict[str, Any]:
@@ -212,6 +237,8 @@ def make_gate_router(target: str) -> Callable[[AgentState], list[Send] | str]:
     """Route to ``target`` with the calls still unanswered; with none left, reason again."""
 
     def route_after_gate(state: AgentState) -> list[Send] | str:
+        if state.get("pending_review"):
+            return AWAIT_NODE
         calls = pending_tool_calls(state["messages"])
         return [Send(target, calls)] if calls else REASON_NODE
 
