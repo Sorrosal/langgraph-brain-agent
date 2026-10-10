@@ -1,6 +1,7 @@
 """Graph state schema."""
 
-from typing import Annotated, NotRequired, TypedDict
+import operator
+from typing import Annotated, Any, NotRequired, TypedDict
 
 from langchain_core.messages import AnyMessage
 from langgraph.graph.message import add_messages
@@ -15,3 +16,5 @@ class AgentState(TypedDict):
     """Rolling summary of older conversation turns."""
     step_count: NotRequired[int]
     """Reasoning steps taken in the current run, used by the step guard."""
+    approvals: NotRequired[Annotated[list[dict[str, Any]], operator.add]]
+    """Audit trail of human decisions: action id, tool name and decision type."""

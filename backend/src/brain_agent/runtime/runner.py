@@ -6,19 +6,25 @@ import os
 import socket
 import uuid
 from dataclasses import dataclass
-from typing import Literal
+from typing import Any, Literal
 
 import structlog
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, ToolMessage
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.base import BaseCheckpointSaver
-from langgraph.types import StateSnapshot
+from langgraph.types import Command, StateSnapshot
 
-from brain_agent.errors import ConfigurationError, LeaseLostError, ThreadBusyError
+from brain_agent.errors import (
+    ConfigurationError,
+    LeaseLostError,
+    NoPendingApprovalError,
+    ThreadBusyError,
+)
 from brain_agent.graph.builder import AgentGraph
 from brain_agent.graph.nodes import TOOLS_NODE
 from brain_agent.graph.retry import is_transient_error
 from brain_agent.graph.state import AgentState
+from brain_agent.hitl.models import ApprovalInterrupt, ApprovalResponse
 from brain_agent.persistence.runs import RunLedger
 
 logger = structlog.get_logger(__name__)
@@ -36,6 +42,8 @@ class RunResult:
     status: RunStatus
     last_message: str | None
     next_nodes: tuple[str, ...]
+    pending_approval: ApprovalInterrupt | None = None
+    """Set when the run is paused waiting for a human decision."""
 
 
 def default_owner_id() -> str:
@@ -123,6 +131,8 @@ class AgentRunner:
         """
         config = _thread_config(thread_id)
         pending = await self._graph.aget_state(config)
+        if _pending_approval(pending) is not None:
+            raise ThreadBusyError(thread_id, tuple(pending.next), approval_pending=True)
         if pending.next:
             record = await self._runs.get(thread_id) if self._runs is not None else None
             if record is None or record.status != "failed":
@@ -161,11 +171,34 @@ class AgentRunner:
         """Continue an unfinished run from its last checkpoint; no-op if nothing is pending."""
         config = _thread_config(thread_id)
         snapshot = await self._graph.aget_state(config)
+        if _pending_approval(snapshot) is not None:
+            # Waiting for a human, not crashed: resuming blindly would skip the decision.
+            return await self._result(thread_id)
         if snapshot.next:
             token = await self._execute(thread_id, None, reset_attempts=False)
         else:
             token = await self._reclaim_stale_row(thread_id)
         return await self._finish(thread_id, token)
+
+    async def approve(self, thread_id: str, response: ApprovalResponse) -> RunResult:
+        """Apply the human decisions to the paused approval and continue the run.
+
+        Raises:
+            NoPendingApprovalError: the thread is not paused on an approval.
+            InvalidApprovalError: the decisions do not match the pending actions; the thread
+                stays paused.
+        """
+        pending = await self.get_pending_approval(thread_id)
+        if pending is None:
+            raise NoPendingApprovalError(thread_id)
+        response.ensure_covers(pending.actions)
+        command: Command[Any] = Command(resume=response.model_dump())
+        token = await self._execute(thread_id, command, reset_attempts=True)
+        return await self._finish(thread_id, token)
+
+    async def get_pending_approval(self, thread_id: str) -> ApprovalInterrupt | None:
+        """Return the approval request the thread is paused on, if any."""
+        return _pending_approval(await self.get_state(thread_id))
 
     async def _reclaim_stale_row(self, thread_id: str) -> int | None:
         """Re-lease a ``running`` row with nothing left to run, so it can be closed fenced."""
@@ -183,7 +216,7 @@ class AgentRunner:
         return await self._graph.aget_state(_thread_config(thread_id))
 
     async def _execute(
-        self, thread_id: str, graph_input: AgentState | None, *, reset_attempts: bool
+        self, thread_id: str, graph_input: AgentState | Command[Any] | None, *, reset_attempts: bool
     ) -> int | None:
         """Run the graph under a lease; return the fencing token (``None`` without a registry)."""
         config = _thread_config(thread_id)
@@ -273,6 +306,7 @@ class AgentRunner:
             status="interrupted" if snapshot.next else "completed",
             last_message=messages[-1].text if messages else None,
             next_nodes=tuple(snapshot.next),
+            pending_approval=_pending_approval(snapshot),
         )
 
 
@@ -280,3 +314,11 @@ def _thread_config(thread_id: str) -> RunnableConfig:
     if not thread_id.strip():
         raise ValueError("thread_id must be a non-empty string")
     return {"configurable": {"thread_id": thread_id}}
+
+
+def _pending_approval(snapshot: StateSnapshot) -> ApprovalInterrupt | None:
+    """The approval interrupt still awaiting an answer in the latest state, if any."""
+    for interrupt in snapshot.interrupts:
+        if isinstance(interrupt.value, dict) and interrupt.value.get("kind") == "approval_required":
+            return ApprovalInterrupt.model_validate(interrupt.value)
+    return None
