@@ -13,7 +13,7 @@ from langgraph.types import Send, interrupt
 
 from brain_agent.graph.state import AgentState
 from brain_agent.hitl.models import ActionRequest, ApprovalInterrupt, ApprovalResponse
-from brain_agent.hitl.policy import ApprovalPolicy
+from brain_agent.hitl.policy import ApprovalPolicy, PolicyVerdict
 
 logger = structlog.get_logger(__name__)
 
@@ -51,10 +51,12 @@ def step_limit_message(max_steps: int) -> str:
 def make_reason_node(
     model: Runnable[LanguageModelInput, AIMessage],
     *,
-    system_prompt: str = DEFAULT_SYSTEM_PROMPT,
+    system_prompt: str | Callable[[], str] = DEFAULT_SYSTEM_PROMPT,
     max_steps: int | None = None,
 ) -> ReasonNode:
     """Create the node that calls the (already tool-bound) chat model.
+
+    ``system_prompt`` may be a callable, evaluated on every call (so rule reloads apply).
 
     When ``max_steps`` is set and the run has already taken that many steps, the node skips
     the model and returns a final message explaining the limit.
@@ -65,7 +67,8 @@ def make_reason_node(
         if max_steps is not None and step_count >= max_steps:
             return {"messages": [AIMessage(content=step_limit_message(max_steps))]}
 
-        prompt = [SystemMessage(content=system_prompt), *state["messages"]]
+        text = system_prompt() if callable(system_prompt) else system_prompt
+        prompt = [SystemMessage(content=text), *state["messages"]]
         response = await model.ainvoke(prompt, config)
         return {"messages": [response], "step_count": step_count + 1}
 
@@ -109,9 +112,12 @@ def make_approval_gate(tools: Sequence[BaseTool], policy: ApprovalPolicy) -> Gat
         if len(calls) != len(pending):
             return _reject_duplicate_ids(pending)
         actions = []
+        blocked: list[tuple[ToolCall, PolicyVerdict]] = []
         for call_id, call in calls.items():
             verdict = policy.evaluate(call, tools_by_name.get(call["name"]))
-            if verdict is not None:
+            if verdict is not None and verdict.blocked:
+                blocked.append((call, verdict))
+            elif verdict is not None:
                 actions.append(
                     ActionRequest(
                         action_id=call_id,
@@ -121,15 +127,41 @@ def make_approval_gate(tools: Sequence[BaseTool], policy: ApprovalPolicy) -> Gat
                         reason=verdict.reason,
                     )
                 )
+        # Pure function of the state, so it is safe to recompute when the node re-runs on resume.
+        refusals = _refuse_blocked(blocked)
         if not actions:
-            return {}
+            return refusals
 
         raw = interrupt(ApprovalInterrupt(actions=actions).model_dump())
         response = ApprovalResponse.model_validate(raw)
         response.ensure_covers(actions)
-        return _apply_decisions(state, calls, response)
+        decided = _apply_decisions(state, calls, response)
+        return {
+            "messages": [*refusals["messages"], *decided["messages"]],
+            "approvals": [*refusals["approvals"], *decided["approvals"]],
+        }
 
     return approval_gate
+
+
+def _refuse_blocked(blocked: list[tuple[ToolCall, PolicyVerdict]]) -> dict[str, Any]:
+    """Answer blocked calls with an error and an audit entry; they never run nor wait."""
+    messages: list[AnyMessage] = []
+    approvals: list[dict[str, Any]] = []
+    for call, verdict in blocked:
+        call_id, name = str(call["id"]), call["name"]
+        text = f"Blocked by rule {', '.join(verdict.rule_ids)}: {verdict.reason}"
+        messages.append(ToolMessage(tool_call_id=call_id, name=name, content=text, status="error"))
+        approvals.append(
+            {
+                "action_id": call_id,
+                "tool_name": name,
+                "decision": "blocked",
+                "rule_ids": list(verdict.rule_ids),
+            }
+        )
+        logger.info("tool_call_blocked", tool=name, rules=list(verdict.rule_ids))
+    return {"messages": messages, "approvals": approvals}
 
 
 def _reject_duplicate_ids(pending: list[ToolCall]) -> dict[str, Any]:

@@ -13,10 +13,21 @@ DEFAULT_REASON = "This tool requires human approval."
 
 @dataclass(frozen=True, slots=True)
 class PolicyVerdict:
-    """A policy's decision that a call needs approval."""
+    """A policy's decision that a call needs approval, or must not run at all."""
 
     risk: Risk
     reason: str
+    blocked: bool = False
+    """The call is refused outright: never executed and never offered for approval."""
+    rule_ids: tuple[str, ...] = ()
+    """Ids of the rules behind the verdict, for audit."""
+
+
+RISK_ORDER: tuple[Risk, ...] = ("low", "medium", "high")
+
+
+def _severity(verdict: PolicyVerdict) -> tuple[bool, int]:
+    return verdict.blocked, RISK_ORDER.index(verdict.risk)
 
 
 class ApprovalPolicy(Protocol):
@@ -47,14 +58,20 @@ class MetadataApprovalPolicy:
 
 
 class CompositeApprovalPolicy:
-    """Asks several policies in order; the first verdict wins."""
+    """Asks every policy and returns the strictest verdict (block > approval > none).
+
+    Approvals are ranked by risk; among equally strict verdicts the earliest policy wins.
+    """
 
     def __init__(self, *policies: ApprovalPolicy) -> None:
         self._policies = policies
 
     def evaluate(self, tool_call: ToolCall, tool: BaseTool | None) -> PolicyVerdict | None:
+        strictest: PolicyVerdict | None = None
         for policy in self._policies:
             verdict = policy.evaluate(tool_call, tool)
-            if verdict is not None:
-                return verdict
-        return None
+            if verdict is not None and (
+                strictest is None or _severity(verdict) > _severity(strictest)
+            ):
+                strictest = verdict
+        return strictest

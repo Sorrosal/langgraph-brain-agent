@@ -1,6 +1,6 @@
 """Assembly of the agent graph."""
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from typing import Any
 
 from langchain_core.language_models import BaseChatModel, LanguageModelInput
@@ -14,6 +14,9 @@ from langgraph.prebuilt import ToolNode
 from langgraph.store.base import BaseStore
 from langgraph.types import RetryPolicy
 
+from brain_agent.brain.policy import RulesApprovalPolicy
+from brain_agent.brain.prompt import build_system_prompt
+from brain_agent.brain.rules import RulesEngine
 from brain_agent.graph.nodes import (
     APPROVAL_NODE,
     DEFAULT_SYSTEM_PROMPT,
@@ -27,7 +30,11 @@ from brain_agent.graph.nodes import (
 )
 from brain_agent.graph.retry import is_transient_error
 from brain_agent.graph.state import AgentState
-from brain_agent.hitl.policy import ApprovalPolicy, MetadataApprovalPolicy
+from brain_agent.hitl.policy import (
+    ApprovalPolicy,
+    CompositeApprovalPolicy,
+    MetadataApprovalPolicy,
+)
 from brain_agent.persistence.tool_ledger import ToolLedger
 from brain_agent.tools.idempotency import make_resolve_uncertain_node, make_tools_node
 
@@ -65,6 +72,7 @@ def build_graph(
     retry_policy: RetryPolicy = DEFAULT_RETRY_POLICY,
     approval_policy: ApprovalPolicy | None = None,
     tool_ledger: ToolLedger | None = None,
+    rules: RulesEngine | None = None,
 ) -> AgentGraph:
     """Build and compile the reason/act agent graph.
 
@@ -74,6 +82,10 @@ def build_graph(
     ``tools`` always returns to ``reason``. With a ``tool_ledger`` every tool call runs
     exactly once even when the node is replayed after a crash (see
     :mod:`brain_agent.tools.idempotency`); without one tools are simply executed.
+
+    With ``rules`` the system prompt is rebuilt from the rule set on every model call (so rule
+    reloads apply, replacing ``system_prompt``) and hard rules join the approval policy: the
+    strictest verdict of the rules, ``approval_policy`` (default metadata) wins.
     """
     if max_steps < 1:
         raise ValueError(f"max_steps must be at least 1, got {max_steps}")
@@ -81,13 +93,19 @@ def build_graph(
     bound_model: Runnable[LanguageModelInput, AIMessage] = (
         model.bind_tools(tools) if tools else model
     )
-    reason = make_reason_node(bound_model, system_prompt=system_prompt, max_steps=max_steps)
+    prompt: str | Callable[[], str] = system_prompt
+    policy = approval_policy or MetadataApprovalPolicy()
+    if rules is not None:
+        engine = rules
+        prompt = lambda: build_system_prompt(engine.ruleset)  # noqa: E731
+        policy = CompositeApprovalPolicy(RulesApprovalPolicy(engine), policy)
+    reason = make_reason_node(bound_model, system_prompt=prompt, max_steps=max_steps)
 
     builder = StateGraph(AgentState)
     builder.add_node(REASON_NODE, reason, retry_policy=retry_policy)
     builder.add_edge(START, REASON_NODE)
     if tools:
-        gate = make_approval_gate(tools, approval_policy or MetadataApprovalPolicy())
+        gate = make_approval_gate(tools, policy)
         builder.add_node(APPROVAL_NODE, gate)
         builder.add_node(
             TOOLS_NODE, make_tools_node(tools, tool_ledger) if tool_ledger else ToolNode(tools)

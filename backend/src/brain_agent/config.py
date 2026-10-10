@@ -34,6 +34,8 @@ class Settings(BaseSettings):
     database_url: str = "postgresql://brain:brain@127.0.0.1:5432/brain"
     log_level: LogLevel = "INFO"
     environment: Environment = "development"
+    rules_dir: Path = REPO_ROOT / "rules"
+    """Directory of ``*.yaml`` rule files (see ``rules/README.md``)."""
 
 
 @lru_cache(maxsize=1)
