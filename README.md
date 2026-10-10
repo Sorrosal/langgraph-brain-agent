@@ -65,7 +65,7 @@ are resolved relative to the code, so the working directory does not matter.
 | ---------------- | ----------------------------------------------- | -------------------------------------------------------------- |
 | `OPENAI_API_KEY` | _(none, required to run the agent)_             | OpenAI API key used by the chat model.                         |
 | `OPENAI_MODEL`   | `gpt-4o-mini`                                   | OpenAI chat model name.                                        |
-| `DATABASE_URL`   | `postgresql://brain:brain@localhost:5432/brain` | PostgreSQL connection string (matches `docker-compose.yml`).   |
+| `DATABASE_URL`   | `postgresql://brain:brain@127.0.0.1:5432/brain` | PostgreSQL connection string (matches `docker-compose.yml`). Prefer `127.0.0.1` over `localhost` on Windows (async psycopg may stall on IPv6).   |
 | `LOG_LEVEL`      | `INFO`                                          | One of `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`.        |
 | `ENVIRONMENT`    | `development`                                   | One of `development`, `test`, `production`.                    |
 
@@ -74,7 +74,7 @@ Example `.env`:
 ```dotenv
 OPENAI_API_KEY=sk-...
 OPENAI_MODEL=gpt-4o-mini
-DATABASE_URL=postgresql://brain:brain@localhost:5432/brain
+DATABASE_URL=postgresql://brain:brain@127.0.0.1:5432/brain
 LOG_LEVEL=INFO
 ENVIRONMENT=development
 ```

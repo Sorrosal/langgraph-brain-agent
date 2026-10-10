@@ -33,7 +33,7 @@ def test_defaults() -> None:
 
     assert settings.openai_api_key is None
     assert settings.openai_model == "gpt-4o-mini"
-    assert settings.database_url == "postgresql://brain:brain@localhost:5432/brain"
+    assert settings.database_url == "postgresql://brain:brain@127.0.0.1:5432/brain"
     assert settings.log_level == "INFO"
     assert settings.environment == "development"
 

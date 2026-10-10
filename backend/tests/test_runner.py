@@ -1,15 +1,18 @@
 """Tests for the agent runner: thread persistence and crash recovery via checkpoints."""
 
+import asyncio
+import os
+
 import pytest
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, ToolMessage
 from langchain_core.tools import BaseTool, tool
 from langgraph.checkpoint.memory import InMemorySaver
 
-from brain_agent.errors import ConfigurationError
+from brain_agent.errors import ConfigurationError, ThreadBusyError
 from brain_agent.graph.builder import build_graph
 from brain_agent.graph.nodes import TOOLS_NODE
 from brain_agent.runtime.runner import AgentRunner, RunResult
-from tests.fakes import ScriptedChatModel, tool_call
+from tests.fakes import FakeRunLedger, ScriptedChatModel, tool_call
 
 
 class SimulatedCrashError(Exception):
@@ -173,3 +176,158 @@ async def test_run_rejects_blank_thread_id() -> None:
 
     with pytest.raises(ValueError, match="thread_id"):
         await runner.run("  ", "hi")
+
+
+async def test_run_refuses_a_thread_with_pending_work() -> None:
+    checkpointer = InMemorySaver()
+
+    @tool
+    def lookup(query: str) -> str:
+        """Look up a record."""
+        raise SimulatedCrashError("process died mid-tool")
+
+    model = ScriptedChatModel(script=[tool_call("lookup", {"query": "ACME"}, "call-1")])
+    runner = AgentRunner(build_graph(model, [lookup], checkpointer=checkpointer))
+    with pytest.raises(SimulatedCrashError):
+        await runner.run("thread-1", "find ACME")
+
+    with pytest.raises(ThreadBusyError, match="thread-1") as busy:
+        await runner.run("thread-1", "another question")
+
+    assert busy.value.thread_id == "thread-1"
+    assert busy.value.next_nodes == (TOOLS_NODE,)
+    assert model.calls == 1
+    state = await runner.get_state("thread-1")
+    assert [m.text for m in state.values["messages"] if m.type == "human"] == ["find ACME"]
+
+
+def _ledger_runner(
+    model: ScriptedChatModel,
+    ledger: FakeRunLedger,
+    tools: list[BaseTool] | None = None,
+    checkpointer: InMemorySaver | None = None,
+    **kwargs: float,
+) -> AgentRunner:
+    graph = build_graph(model, tools or [], checkpointer=checkpointer or InMemorySaver())
+    return AgentRunner(graph, runs=ledger, owner_id="owner-1", **kwargs)
+
+
+async def test_run_records_lifecycle_in_the_run_registry() -> None:
+    ledger = FakeRunLedger()
+    runner = _ledger_runner(ScriptedChatModel(script=[AIMessage(content="ok")]), ledger)
+
+    await runner.run("thread-1", "hi")
+
+    assert ledger.events == ["running:thread-1", "completed:thread-1"]
+    assert ledger.records["thread-1"].status == "completed"
+
+
+async def test_default_owner_id_identifies_host_and_process() -> None:
+    graph = build_graph(ScriptedChatModel(script=[]), [], checkpointer=InMemorySaver())
+    first, second = AgentRunner(graph), AgentRunner(graph)
+
+    assert str(os.getpid()) in first.owner_id
+    assert first.owner_id != second.owner_id
+
+
+async def test_heartbeat_renews_the_lease_while_the_graph_runs() -> None:
+    ledger = FakeRunLedger()
+
+    @tool
+    async def slow(query: str) -> str:
+        """Take a while."""
+        await asyncio.sleep(0.3)
+        return query
+
+    model = ScriptedChatModel(
+        script=[tool_call("slow", {"query": "x"}, "call-1"), AIMessage(content="done")]
+    )
+    runner = _ledger_runner(model, ledger, [slow], lease_seconds=1.0, heartbeat_interval=0.03)
+
+    await runner.run("thread-1", "go")
+
+    assert ledger.heartbeats >= 3
+    beats = ledger.heartbeats
+    await asyncio.sleep(0.1)
+    assert ledger.heartbeats == beats  # heartbeat stops once the run is over
+
+
+async def test_transient_failure_keeps_run_recoverable() -> None:
+    ledger = FakeRunLedger()
+
+    @tool
+    def flaky(query: str) -> str:
+        """Fail like a network blip."""
+        raise ConnectionError("db down")
+
+    model = ScriptedChatModel(script=[tool_call("flaky", {"query": "x"}, "call-1")])
+    runner = _ledger_runner(model, ledger, [flaky])
+
+    with pytest.raises(ConnectionError):
+        await runner.run("thread-1", "go")
+
+    record = ledger.records["thread-1"]
+    assert record.status == "running"
+    assert record.last_error is not None
+    assert "db down" in record.last_error
+
+
+async def test_permanent_failure_marks_run_failed() -> None:
+    ledger = FakeRunLedger()
+
+    @tool
+    def broken(query: str) -> str:
+        """Fail permanently."""
+        raise ValueError("bad input")
+
+    model = ScriptedChatModel(script=[tool_call("broken", {"query": "x"}, "call-1")])
+    runner = _ledger_runner(model, ledger, [broken])
+
+    with pytest.raises(ValueError, match="bad input"):
+        await runner.run("thread-1", "go")
+
+    record = ledger.records["thread-1"]
+    assert record.status == "failed"
+    assert record.last_error is not None
+    assert "bad input" in record.last_error
+
+
+async def test_resume_keeps_attempt_count_and_completes_the_run() -> None:
+    ledger = FakeRunLedger()
+    checkpointer = InMemorySaver()
+    calls = {"n": 0}
+
+    @tool
+    def lookup(query: str) -> str:
+        """Fail once, then work."""
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise ConnectionError("blip")
+        return "found"
+
+    first = ScriptedChatModel(script=[tool_call("lookup", {"query": "x"}, "call-1")])
+    with pytest.raises(ConnectionError):
+        await _ledger_runner(first, ledger, [lookup], checkpointer).run("thread-1", "go")
+    ledger.expire("thread-1")
+    assert await ledger.claim_orphans("owner-1", 30, 5) == ["thread-1"]
+
+    second = ScriptedChatModel(script=[AIMessage(content="all done")])
+    result = await _ledger_runner(second, ledger, [lookup], checkpointer).resume("thread-1")
+
+    assert result.status == "completed"
+    record = ledger.records["thread-1"]
+    assert (record.status, record.attempts) == ("completed", 1)
+
+
+async def test_resume_with_nothing_pending_closes_a_stale_running_row() -> None:
+    ledger = FakeRunLedger()
+    checkpointer = InMemorySaver()
+    model = ScriptedChatModel(script=[AIMessage(content="done")])
+    runner = _ledger_runner(model, ledger, checkpointer=checkpointer)
+    await runner.run("thread-1", "hi")
+    ledger.records["thread-1"].status = "running"  # crashed right before mark_finished
+
+    await runner.resume("thread-1")
+
+    assert ledger.records["thread-1"].status == "completed"
+    assert model.calls == 1

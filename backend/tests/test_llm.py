@@ -33,3 +33,13 @@ def test_returns_configured_chat_openai() -> None:
     assert model.max_retries == DEFAULT_MAX_RETRIES
     assert isinstance(model.openai_api_key, SecretStr)
     assert model.openai_api_key.get_secret_value() == "sk-test"
+
+
+def test_request_timeout_comes_from_settings() -> None:
+    settings = Settings(_env_file=None, openai_api_key=SecretStr("sk-test"))
+    assert create_chat_model(settings).request_timeout == 60
+
+    custom = Settings(
+        _env_file=None, openai_api_key=SecretStr("sk-test"), openai_timeout_seconds=12.5
+    )
+    assert create_chat_model(custom).request_timeout == 12.5

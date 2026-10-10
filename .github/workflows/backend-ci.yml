@@ -43,8 +43,9 @@ jobs:
           --health-retries 10
 
     env:
-      DATABASE_URL: postgresql://brain:brain@localhost:5432/brain
+      DATABASE_URL: postgresql://brain:brain@127.0.0.1:5432/brain
       ENVIRONMENT: test
+      REQUIRE_INTEGRATION: "1"
 
     steps:
       - uses: actions/checkout@v4

@@ -25,4 +25,5 @@ def create_chat_model(settings: Settings, *, max_retries: int = DEFAULT_MAX_RETR
         api_key=api_key,
         temperature=0,
         max_retries=max_retries,
+        timeout=settings.openai_timeout_seconds,
     )

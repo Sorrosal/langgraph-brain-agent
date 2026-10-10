@@ -1,6 +1,7 @@
 """Tests for the core agent graph: reasoning loop, tools, step guard and retries."""
 
-import httpx2
+from typing import Any, cast
+
 import openai
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
@@ -138,11 +139,24 @@ def test_default_retry_policy_settings() -> None:
     assert DEFAULT_RETRY_POLICY.retry_on is is_transient_error
 
 
-_REQUEST = httpx2.Request("POST", "https://api.openai.com/v1/chat/completions")
+class _StubRequest:
+    """Stands in for the HTTP client's request; openai only stores it on the error."""
+
+
+class _StubResponse:
+    """Minimal response exposing what ``openai.APIStatusError`` reads."""
+
+    def __init__(self, status_code: int) -> None:
+        self.status_code = status_code
+        self.request = _StubRequest()
+        self.headers: dict[str, str] = {}
+
+
+_REQUEST = cast(Any, _StubRequest())
 
 
 def _status_error(cls: type[openai.APIStatusError], status: int) -> openai.APIStatusError:
-    return cls("error", response=httpx2.Response(status, request=_REQUEST), body=None)
+    return cls("error", response=cast(Any, _StubResponse(status)), body=None)
 
 
 @pytest.mark.parametrize(

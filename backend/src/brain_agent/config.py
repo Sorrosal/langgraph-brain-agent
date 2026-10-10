@@ -30,7 +30,8 @@ class Settings(BaseSettings):
 
     openai_api_key: SecretStr | None = None
     openai_model: str = "gpt-4o-mini"
-    database_url: str = "postgresql://brain:brain@localhost:5432/brain"
+    openai_timeout_seconds: float = 60
+    database_url: str = "postgresql://brain:brain@127.0.0.1:5432/brain"
     log_level: LogLevel = "INFO"
     environment: Environment = "development"
 
