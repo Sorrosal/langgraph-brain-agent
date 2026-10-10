@@ -10,6 +10,7 @@ dependencies = [
     "langchain-openai>=1.7.0",
     "langgraph>=1.2.14",
     "langgraph-checkpoint-postgres>=3.1.2",
+    "openai>=3.28.0",
     "psycopg[binary,pool]>=3.3.6",
     "pydantic>=2.14.0",
     "pydantic-settings>=2.15.0",
@@ -59,6 +60,10 @@ show_error_codes = true
 asyncio_mode = "auto"
 testpaths = ["tests"]
 addopts = "-ra"
+asyncio_default_fixture_loop_scope = "function"
+markers = [
+    "integration: needs PostgreSQL at DATABASE_URL (REQUIRE_INTEGRATION=1 fails instead of skipping)",
+]
 
 [tool.coverage.run]
 source = ["brain_agent"]

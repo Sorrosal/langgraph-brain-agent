@@ -1,0 +1,103 @@
+"""Recovery of runs orphaned by a crashed process."""
+
+import asyncio
+import contextlib
+from typing import Protocol
+
+import structlog
+
+from brain_agent.persistence.runs import DEFAULT_MAX_ATTEMPTS, RunLedger
+from brain_agent.runtime.runner import RunResult
+
+logger = structlog.get_logger(__name__)
+
+# Upper bound on claim rounds in recover_on_startup, so a pathological registry cannot loop forever.
+MAX_STARTUP_ROUNDS = 100
+
+
+class ThreadResumer(Protocol):
+    """The part of :class:`AgentRunner` the worker needs.
+
+    ``owner_id`` must be the owner the runner heartbeats with, so claimed leases stay alive.
+    """
+
+    @property
+    def owner_id(self) -> str: ...
+
+    async def resume(self, thread_id: str) -> RunResult: ...
+
+
+class RecoveryWorker:
+    """Claims runs whose lease expired and resumes them from their last checkpoint."""
+
+    def __init__(
+        self,
+        runner: ThreadResumer,
+        runs: RunLedger,
+        *,
+        interval_seconds: float = 15.0,
+        lease_seconds: float = 60.0,
+        max_attempts: int = DEFAULT_MAX_ATTEMPTS,
+        batch_size: int = 10,
+    ) -> None:
+        if batch_size < 1:
+            raise ValueError(f"batch_size must be at least 1, got {batch_size}")
+        if max_attempts < 1:
+            raise ValueError(f"max_attempts must be at least 1, got {max_attempts}")
+        self._runner = runner
+        self._runs = runs
+        self._interval_seconds = interval_seconds
+        self._lease_seconds = lease_seconds
+        self._max_attempts = max_attempts
+        self._batch_size = batch_size
+
+    async def run_once(self) -> list[str]:
+        """Claim up to ``batch_size`` orphans and resume them concurrently.
+
+        Returns the claimed thread ids. A failing resume is logged and never affects the
+        others: the runner has already recorded the outcome (transient errors leave the run
+        ``running`` so a later pass retries it, until ``max_attempts``).
+        """
+        claimed = await self._runs.claim_orphans(
+            self._runner.owner_id,
+            self._lease_seconds,
+            self._batch_size,
+            max_attempts=self._max_attempts,
+        )
+        await asyncio.gather(*(self._resume(thread_id) for thread_id in claimed))
+        return claimed
+
+    async def run_forever(self, stop_event: asyncio.Event) -> None:
+        """Poll for orphans every ``interval_seconds`` until ``stop_event`` is set."""
+        while not stop_event.is_set():
+            try:
+                await self.run_once()
+            except Exception:
+                logger.exception("recovery_pass_failed")
+            with contextlib.suppress(TimeoutError):
+                await asyncio.wait_for(stop_event.wait(), timeout=self._interval_seconds)
+
+    async def _resume(self, thread_id: str) -> None:
+        log = logger.bind(thread_id=thread_id)
+        log.info("recovery_resuming")
+        try:
+            result = await self._runner.resume(thread_id)
+        except Exception as exc:
+            log.warning("recovery_resume_failed", error=f"{type(exc).__name__}: {exc}")
+        else:
+            log.info("recovery_resumed", status=result.status)
+
+
+async def recover_on_startup(worker: RecoveryWorker) -> list[str]:
+    """Recover every currently orphaned run once; meant to be awaited at process start-up.
+
+    Repeats :meth:`RecoveryWorker.run_once` until a pass claims nothing. Runs that fail
+    transiently keep a fresh lease, so they are not re-claimed within this call.
+    """
+    recovered: list[str] = []
+    for _ in range(MAX_STARTUP_ROUNDS):
+        claimed = await worker.run_once()
+        if not claimed:
+            break
+        recovered.extend(claimed)
+    return recovered

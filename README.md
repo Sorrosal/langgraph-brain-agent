@@ -42,8 +42,8 @@ Requirements: Docker, [uv](https://docs.astral.sh/uv/) (Python 3.12 is installed
 # 1. Start PostgreSQL with pgvector
 docker compose up -d postgres
 
-# 2. Configure environment
-cp .env.example .env   # then set OPENAI_API_KEY
+# 2. Configure environment: create a .env file at the repo root (see Configuration)
+#    and set at least OPENAI_API_KEY
 
 # 3. Install and run the backend
 cd backend
@@ -53,6 +53,30 @@ uv run uvicorn brain_agent.api.app:create_app --factory --reload
 
 # 4. Run the tests
 uv run pytest
+```
+
+## Configuration
+
+Settings are read from environment variables. For local development, create a `.env` file at
+the repository root with these variables (an optional `backend/.env` overrides it). Both paths
+are resolved relative to the code, so the working directory does not matter.
+
+| Variable         | Default                                         | Description                                                    |
+| ---------------- | ----------------------------------------------- | -------------------------------------------------------------- |
+| `OPENAI_API_KEY` | _(none, required to run the agent)_             | OpenAI API key used by the chat model.                         |
+| `OPENAI_MODEL`   | `gpt-4o-mini`                                   | OpenAI chat model name.                                        |
+| `DATABASE_URL`   | `postgresql://brain:brain@127.0.0.1:5432/brain` | PostgreSQL connection string (matches `docker-compose.yml`). Prefer `127.0.0.1` over `localhost` on Windows (async psycopg may stall on IPv6).   |
+| `LOG_LEVEL`      | `INFO`                                          | One of `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`.        |
+| `ENVIRONMENT`    | `development`                                   | One of `development`, `test`, `production`.                    |
+
+Example `.env`:
+
+```dotenv
+OPENAI_API_KEY=sk-...
+OPENAI_MODEL=gpt-4o-mini
+DATABASE_URL=postgresql://brain:brain@127.0.0.1:5432/brain
+LOG_LEVEL=INFO
+ENVIRONMENT=development
 ```
 
 ## Repository layout
