@@ -1,5 +1,6 @@
 """Tests for human-in-the-loop approvals: policy, models, graph gate and runner."""
 
+import asyncio
 from typing import Any
 
 import pytest
@@ -271,3 +272,102 @@ async def test_run_while_interrupted_is_busy_and_resume_is_a_no_op() -> None:
     assert await runner.resume(THREAD) == paused
     assert model.calls == 1 and tools.refunds == []
     assert ledger.records[THREAD].status == "interrupted"
+
+
+# --- phase 2b review follow-ups ---------------------------------------------------------------
+
+DUPLICATE_IDS = AIMessage(
+    content="",
+    tool_calls=[
+        {"name": "lookup", "args": {"query": "A1"}, "id": "dup"},
+        {"name": "refund", "args": {"order_id": "A1", "amount": 50}, "id": "dup"},
+    ],
+)
+
+
+async def test_duplicate_tool_call_ids_cannot_bypass_approval() -> None:
+    tools = Tools()
+    runner, model = _runner([DUPLICATE_IDS, AIMessage(content="Sorry.")], tools)
+
+    result = await runner.run(THREAD, "go")
+
+    assert (result.status, result.last_message) == ("completed", "Sorry.")
+    assert tools.lookups == [] and tools.refunds == []
+    [message] = _tool_messages((await runner.get_state(THREAD)).values)
+    assert message.status == "error" and "duplicate" in message.text
+    assert model.calls == 2
+
+
+async def test_only_approved_calls_reach_the_tool_node() -> None:
+    tools = Tools()
+    batch = AIMessage(
+        content="",
+        tool_calls=[
+            {"name": "refund", "args": {"order_id": "A1", "amount": 50}, "id": "c1"},
+            {"name": "refund", "args": {"order_id": "B2", "amount": 7}, "id": "c2"},
+            {"name": "lookup", "args": {"query": "A1"}, "id": "c3"},
+        ],
+    )
+    runner, _ = _runner([batch, AIMessage(content="Done.")], tools)
+    await runner.run(THREAD, "go")
+
+    await runner.approve(
+        THREAD,
+        _decide(c1={"type": "reject"}, c2={"type": "approve"}),
+    )
+
+    assert tools.refunds == [{"order_id": "B2", "amount": 7}]
+    assert tools.lookups == ["A1"]
+    assert len(_tool_messages((await runner.get_state(THREAD)).values)) == 3
+
+
+async def test_concurrent_approvals_apply_the_decision_once() -> None:
+    tools = Tools()
+    ledger = FakeRunLedger()
+    model = ScriptedChatModel(script=[REFUND_CALL, AIMessage(content="Refunded.")])
+    graph = build_graph(model, tools.all, checkpointer=InMemorySaver())
+    first = AgentRunner(graph, runs=ledger, owner_id="a")
+    second = AgentRunner(graph, runs=ledger, owner_id="b")
+    await first.run(THREAD, "refund A1")
+    approval = _decide(**{"call-1": {"type": "approve"}})
+
+    outcomes = await asyncio.gather(
+        first.approve(THREAD, approval),
+        second.approve(THREAD, approval),
+        first.approve(THREAD, approval),
+        return_exceptions=True,
+    )
+
+    assert sum(1 for o in outcomes if not isinstance(o, BaseException)) == 1
+    assert all(
+        isinstance(o, ThreadBusyError | NoPendingApprovalError)
+        for o in outcomes
+        if isinstance(o, BaseException)
+    )
+    assert tools.refunds == [{"order_id": "A1", "amount": 50}]
+    assert ledger.records[THREAD].status == "completed"
+
+
+async def test_failed_approval_validation_releases_the_lease() -> None:
+    tools = Tools()
+    ledger = FakeRunLedger()
+    runner, _ = _runner([REFUND_CALL], tools, ledger)
+    await runner.run(THREAD, "refund A1")
+
+    with pytest.raises(InvalidApprovalError):
+        await runner.approve(THREAD, _decide())
+
+    assert (ledger.records[THREAD].status, ledger.records[THREAD].owner) == ("interrupted", None)
+
+
+async def test_resume_of_interrupted_thread_reconciles_a_running_row() -> None:
+    ledger = FakeRunLedger()
+    runner, _ = _runner([REFUND_CALL], Tools(), ledger)
+    await runner.run(THREAD, "refund A1")
+    ledger.records[THREAD].status = "running"  # crash after the pause, before the row was closed
+    ledger.records[THREAD].owner = runner.owner_id
+
+    result = await runner.resume(THREAD)
+
+    assert result.pending_approval is not None
+    assert (ledger.records[THREAD].status, ledger.records[THREAD].owner) == ("interrupted", None)

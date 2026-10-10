@@ -12,6 +12,7 @@ from psycopg.rows import DictRow, dict_row
 from psycopg_pool import AsyncConnectionPool
 
 from brain_agent.persistence.runs import RunRegistry
+from brain_agent.persistence.tool_ledger import ToolExecutionLedger
 
 # Serialises schema setup across processes/replicas starting at the same time.
 _SETUP_LOCK_KEY = 7_424_000
@@ -25,11 +26,12 @@ async def _try_lock(conn: AsyncConnection[DictRow]) -> bool:
 
 @dataclass(frozen=True, slots=True)
 class Persistence:
-    """Everything that survives a process: checkpoints, long-term store and the run registry."""
+    """Everything that survives a process: checkpoints, store, run registry and tool ledger."""
 
     checkpointer: AsyncPostgresSaver
     store: AsyncPostgresStore
     runs: RunRegistry
+    tool_ledger: ToolExecutionLedger
     pool: AsyncConnectionPool[AsyncConnection[DictRow]]
 
 
@@ -54,6 +56,7 @@ async def open_persistence(
         checkpointer = AsyncPostgresSaver(pool)
         store = AsyncPostgresStore(pool)
         runs = RunRegistry(pool)
+        tool_ledger = ToolExecutionLedger(pool)
         # Session-level lock on a dedicated connection (not the pool, which setup also needs).
         async with await AsyncConnection.connect(
             database_url, autocommit=True, row_factory=dict_row
@@ -66,6 +69,9 @@ async def open_persistence(
                 await checkpointer.setup()
                 await store.setup()
                 await runs.setup()
+                await tool_ledger.setup()
             finally:
                 await lock_conn.execute("SELECT pg_advisory_unlock(%s)", (_SETUP_LOCK_KEY,))
-        yield Persistence(checkpointer=checkpointer, store=store, runs=runs, pool=pool)
+        yield Persistence(
+            checkpointer=checkpointer, store=store, runs=runs, tool_ledger=tool_ledger, pool=pool
+        )

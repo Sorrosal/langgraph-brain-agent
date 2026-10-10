@@ -5,8 +5,9 @@ import contextlib
 import os
 import socket
 import uuid
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Any, Literal, TypeVar
 
 import structlog
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, ToolMessage
@@ -24,12 +25,21 @@ from brain_agent.graph.builder import AgentGraph
 from brain_agent.graph.nodes import TOOLS_NODE
 from brain_agent.graph.retry import is_transient_error
 from brain_agent.graph.state import AgentState
-from brain_agent.hitl.models import ApprovalInterrupt, ApprovalResponse
+from brain_agent.hitl.models import (
+    ApprovalInterrupt,
+    ApprovalResponse,
+    ConfirmDone,
+    PendingInterrupt,
+    Retry,
+    Skip,
+    UncertainExecutionInterrupt,
+)
 from brain_agent.persistence.runs import RunLedger
 
 logger = structlog.get_logger(__name__)
 
 RunStatus = Literal["completed", "interrupted"]
+Pending = TypeVar("Pending", ApprovalInterrupt, UncertainExecutionInterrupt)
 
 DEFAULT_LEASE_SECONDS = 60.0
 
@@ -43,7 +53,9 @@ class RunResult:
     last_message: str | None
     next_nodes: tuple[str, ...]
     pending_approval: ApprovalInterrupt | None = None
-    """Set when the run is paused waiting for a human decision."""
+    """Set when the run is paused waiting for an approval decision."""
+    pending_interrupt: PendingInterrupt | None = None
+    """Whatever the run is paused on: an approval or an uncertain tool execution."""
 
 
 def default_owner_id() -> str:
@@ -111,6 +123,7 @@ class AgentRunner:
         self._owner_id = owner_id or default_owner_id()
         self._lease_seconds = lease_seconds
         self._heartbeat_interval = resolved_interval
+        self._active: set[str] = set()  # threads this runner is executing right now
 
     @property
     def lease_seconds(self) -> float:
@@ -131,7 +144,7 @@ class AgentRunner:
         """
         config = _thread_config(thread_id)
         pending = await self._graph.aget_state(config)
-        if _pending_approval(pending) is not None:
+        if _pending_interrupt(pending) is not None:
             raise ThreadBusyError(thread_id, tuple(pending.next), approval_pending=True)
         if pending.next:
             record = await self._runs.get(thread_id) if self._runs is not None else None
@@ -171,9 +184,10 @@ class AgentRunner:
         """Continue an unfinished run from its last checkpoint; no-op if nothing is pending."""
         config = _thread_config(thread_id)
         snapshot = await self._graph.aget_state(config)
-        if _pending_approval(snapshot) is not None:
+        if _pending_interrupt(snapshot) is not None:
             # Waiting for a human, not crashed: resuming blindly would skip the decision.
-            return await self._result(thread_id)
+            # A row still marked running (crash after the pause) is closed as interrupted.
+            return await self._finish(thread_id, await self._reclaim_stale_row(thread_id))
         if snapshot.next:
             token = await self._execute(thread_id, None, reset_attempts=False)
         else:
@@ -183,22 +197,56 @@ class AgentRunner:
     async def approve(self, thread_id: str, response: ApprovalResponse) -> RunResult:
         """Apply the human decisions to the paused approval and continue the run.
 
+        The lease is taken before the pending approval is read, so concurrent calls cannot
+        both apply a decision.
+
         Raises:
             NoPendingApprovalError: the thread is not paused on an approval.
+            ThreadBusyError: another call or process is already resuming the thread.
             InvalidApprovalError: the decisions do not match the pending actions; the thread
                 stays paused.
         """
-        pending = await self.get_pending_approval(thread_id)
-        if pending is None:
-            raise NoPendingApprovalError(thread_id)
-        response.ensure_covers(pending.actions)
-        command: Command[Any] = Command(resume=response.model_dump())
-        token = await self._execute(thread_id, command, reset_attempts=True)
+
+        def command(pending: ApprovalInterrupt) -> Command[Any]:
+            response.ensure_covers(pending.actions)
+            return Command(resume=response.model_dump())
+
+        return await self._resume_paused(thread_id, ApprovalInterrupt, command)
+
+    async def resolve_uncertain(
+        self, thread_id: str, decision: ConfirmDone | Retry | Skip
+    ) -> RunResult:
+        """Answer the paused uncertain tool execution (see :class:`UncertainExecutionInterrupt`).
+
+        Raises:
+            NoPendingApprovalError: the thread is not paused on an uncertain execution.
+            ThreadBusyError: another call or process is already resuming the thread.
+        """
+        return await self._resume_paused(
+            thread_id,
+            UncertainExecutionInterrupt,
+            lambda _pending: Command(resume=decision.model_dump()),
+        )
+
+    async def _resume_paused(
+        self,
+        thread_id: str,
+        kind: type[Pending],
+        build_command: Callable[[Pending], Command[Any]],
+    ) -> RunResult:
+        async def prepare() -> Command[Any]:
+            pending = _pending_interrupt(await self.get_state(thread_id))
+            if not isinstance(pending, kind):
+                raise NoPendingApprovalError(thread_id)
+            return build_command(pending)
+
+        token = await self._execute(thread_id, prepare, reset_attempts=True)
         return await self._finish(thread_id, token)
 
     async def get_pending_approval(self, thread_id: str) -> ApprovalInterrupt | None:
         """Return the approval request the thread is paused on, if any."""
-        return _pending_approval(await self.get_state(thread_id))
+        pending = _pending_interrupt(await self.get_state(thread_id))
+        return pending if isinstance(pending, ApprovalInterrupt) else None
 
     async def _reclaim_stale_row(self, thread_id: str) -> int | None:
         """Re-lease a ``running`` row with nothing left to run, so it can be closed fenced."""
@@ -216,18 +264,61 @@ class AgentRunner:
         return await self._graph.aget_state(_thread_config(thread_id))
 
     async def _execute(
-        self, thread_id: str, graph_input: AgentState | Command[Any] | None, *, reset_attempts: bool
+        self,
+        thread_id: str,
+        graph_input: AgentState | Command[Any] | Callable[[], Awaitable[Command[Any]]] | None,
+        *,
+        reset_attempts: bool,
     ) -> int | None:
-        """Run the graph under a lease; return the fencing token (``None`` without a registry)."""
+        """Run the graph under a lease; return the fencing token (``None`` without a registry).
+
+        A callable ``graph_input`` is awaited once the thread is claimed (in-process guard and
+        lease), so it can validate against state nobody else is changing. If it raises, the
+        claim is released and the error propagates.
+        """
         config = _thread_config(thread_id)
         runs = self._runs
-        if runs is None:
-            await self._graph.ainvoke(graph_input, config, durability="sync")
-            return None
+        if thread_id in self._active:
+            raise ThreadBusyError(thread_id)
+        self._active.add(thread_id)
+        try:
+            token: int | None = None
+            if runs is not None:
+                prior = await runs.get(thread_id)
+                token = await runs.mark_running(
+                    thread_id, self._owner_id, self._lease_seconds, reset_attempts=reset_attempts
+                )
+            if callable(graph_input):
+                try:
+                    graph_input = await graph_input()
+                except BaseException:
+                    if runs is not None and token is not None:
+                        await self._release(runs, thread_id, token, prior.status if prior else None)
+                    raise
+            if runs is None or token is None:
+                await self._graph.ainvoke(graph_input, config, durability="sync")
+                return None
+            return await self._execute_leased(runs, thread_id, token, graph_input)
+        finally:
+            self._active.discard(thread_id)
 
-        token = await runs.mark_running(
-            thread_id, self._owner_id, self._lease_seconds, reset_attempts=reset_attempts
-        )
+    async def _release(
+        self, runs: RunLedger, thread_id: str, token: int, prior: str | None
+    ) -> None:
+        """Give back a lease taken for a call that did not run the graph, keeping the status."""
+        snapshot = await self.get_state(thread_id)
+        derived = "interrupted" if snapshot.next else "completed"
+        status = prior if prior in ("interrupted", "completed", "failed") else derived
+        await runs.mark_finished(thread_id, self._owner_id, token, status)  # type: ignore[arg-type]
+
+    async def _execute_leased(
+        self,
+        runs: RunLedger,
+        thread_id: str,
+        token: int,
+        graph_input: AgentState | Command[Any] | None,
+    ) -> int:
+        config = _thread_config(thread_id)
         lost = asyncio.Event()
         graph_task = asyncio.ensure_future(
             self._graph.ainvoke(graph_input, config, durability="sync")
@@ -301,12 +392,14 @@ class AgentRunner:
     async def _result(self, thread_id: str) -> RunResult:
         snapshot = await self.get_state(thread_id)
         messages: list[BaseMessage] = (snapshot.values or {}).get("messages", [])
+        approval = _pending_interrupt(snapshot)
         return RunResult(
             thread_id=thread_id,
             status="interrupted" if snapshot.next else "completed",
             last_message=messages[-1].text if messages else None,
             next_nodes=tuple(snapshot.next),
-            pending_approval=_pending_approval(snapshot),
+            pending_approval=approval if isinstance(approval, ApprovalInterrupt) else None,
+            pending_interrupt=approval,
         )
 
 
@@ -316,9 +409,14 @@ def _thread_config(thread_id: str) -> RunnableConfig:
     return {"configurable": {"thread_id": thread_id}}
 
 
-def _pending_approval(snapshot: StateSnapshot) -> ApprovalInterrupt | None:
-    """The approval interrupt still awaiting an answer in the latest state, if any."""
+def _pending_interrupt(snapshot: StateSnapshot) -> PendingInterrupt | None:
+    """The interrupt still awaiting a human answer in the latest state, if any."""
     for interrupt in snapshot.interrupts:
-        if isinstance(interrupt.value, dict) and interrupt.value.get("kind") == "approval_required":
-            return ApprovalInterrupt.model_validate(interrupt.value)
+        value = interrupt.value
+        if not isinstance(value, dict):
+            continue
+        if value.get("kind") == "approval_required":
+            return ApprovalInterrupt.model_validate(value)
+        if value.get("kind") == "uncertain_execution":
+            return UncertainExecutionInterrupt.model_validate(value)
     return None

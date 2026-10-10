@@ -7,7 +7,7 @@ resume, so it must be a pure function of the graph state: no timestamps, no rand
 from collections.abc import Sequence
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, TypeAdapter
 
 from brain_agent.errors import InvalidApprovalError
 
@@ -75,3 +75,42 @@ class ApprovalResponse(BaseModel):
             raise InvalidApprovalError(f"Decision missing for actions: {', '.join(missing)}")
         if unknown:
             raise InvalidApprovalError(f"Decision for unknown actions: {', '.join(unknown)}")
+
+
+class UncertainExecutionInterrupt(BaseModel):
+    """Interrupt payload: a tool call that may already have produced its side effect."""
+
+    kind: Literal["uncertain_execution"] = "uncertain_execution"
+    action_id: str
+    """The tool call id."""
+    tool_name: str
+    args: dict[str, Any]
+    message: str
+    """Why the outcome is unknown."""
+
+
+PendingInterrupt = ApprovalInterrupt | UncertainExecutionInterrupt
+
+
+class ConfirmDone(BaseModel):
+    """The side effect did happen; do not run the tool again."""
+
+    type: Literal["confirm_done"] = "confirm_done"
+    message: str | None = None
+    """Result handed to the model; defaults to ``"Confirmed done by human"``."""
+
+
+class Retry(BaseModel):
+    """The side effect did not happen; run the tool again."""
+
+    type: Literal["retry"] = "retry"
+
+
+class Skip(BaseModel):
+    """Do not run the tool; the model is told it was skipped."""
+
+    type: Literal["skip"] = "skip"
+
+
+UncertainDecision = Annotated[ConfirmDone | Retry | Skip, Field(discriminator="type")]
+UNCERTAIN_DECISION: TypeAdapter[ConfirmDone | Retry | Skip] = TypeAdapter(UncertainDecision)

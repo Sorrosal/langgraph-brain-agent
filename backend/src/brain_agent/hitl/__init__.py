@@ -4,7 +4,13 @@ from brain_agent.hitl.models import (
     ActionRequest,
     ApprovalInterrupt,
     ApprovalResponse,
+    ConfirmDone,
     Decision,
+    PendingInterrupt,
+    Retry,
+    Skip,
+    UncertainDecision,
+    UncertainExecutionInterrupt,
 )
 from brain_agent.hitl.policy import (
     ApprovalPolicy,
@@ -19,7 +25,13 @@ __all__ = [
     "ApprovalPolicy",
     "ApprovalResponse",
     "CompositeApprovalPolicy",
+    "ConfirmDone",
     "Decision",
     "MetadataApprovalPolicy",
+    "PendingInterrupt",
     "PolicyVerdict",
+    "Retry",
+    "Skip",
+    "UncertainDecision",
+    "UncertainExecutionInterrupt",
 ]

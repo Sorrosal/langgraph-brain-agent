@@ -49,3 +49,12 @@ class NoPendingApprovalError(BrainAgentError):
     def __init__(self, thread_id: str) -> None:
         self.thread_id = thread_id
         super().__init__(f"Thread {thread_id!r} has no pending approval.")
+
+
+class UncertainExecutionError(BrainAgentError):
+    """Raised when a tool call whose outcome is unknown would be executed without a human."""
+
+    def __init__(self, tool_name: str, call_id: str, reason: str) -> None:
+        self.tool_name = tool_name
+        self.call_id = call_id
+        super().__init__(f"Tool call {call_id!r} ({tool_name}) has an uncertain outcome: {reason}")

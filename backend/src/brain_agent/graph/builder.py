@@ -27,6 +27,8 @@ from brain_agent.graph.nodes import (
 from brain_agent.graph.retry import is_transient_error
 from brain_agent.graph.state import AgentState
 from brain_agent.hitl.policy import ApprovalPolicy, MetadataApprovalPolicy
+from brain_agent.persistence.tool_ledger import ToolLedger
+from brain_agent.tools.idempotency import make_tools_node
 
 AgentGraph = CompiledStateGraph[AgentState, None, AgentState, AgentState]
 
@@ -61,13 +63,16 @@ def build_graph(
     system_prompt: str = DEFAULT_SYSTEM_PROMPT,
     retry_policy: RetryPolicy = DEFAULT_RETRY_POLICY,
     approval_policy: ApprovalPolicy | None = None,
+    tool_ledger: ToolLedger | None = None,
 ) -> AgentGraph:
     """Build and compile the reason/act agent graph.
 
     ``reason`` calls the model (bound to ``tools`` when any are given) and routes tool calls to
     ``approval_gate``, which pauses for a human decision on calls ``approval_policy`` flags
     (default: :class:`MetadataApprovalPolicy`) and then sends the remaining calls to ``tools``;
-    ``tools`` always returns to ``reason``.
+    ``tools`` always returns to ``reason``. With a ``tool_ledger`` every tool call runs
+    exactly once even when the node is replayed after a crash (see
+    :mod:`brain_agent.tools.idempotency`); without one tools are simply executed.
     """
     if max_steps < 1:
         raise ValueError(f"max_steps must be at least 1, got {max_steps}")
@@ -83,7 +88,9 @@ def build_graph(
     if tools:
         gate = make_approval_gate(tools, approval_policy or MetadataApprovalPolicy())
         builder.add_node(APPROVAL_NODE, gate)
-        builder.add_node(TOOLS_NODE, ToolNode(tools))
+        builder.add_node(
+            TOOLS_NODE, make_tools_node(tools, tool_ledger) if tool_ledger else ToolNode(tools)
+        )
         builder.add_conditional_edges(REASON_NODE, route_after_reason, [APPROVAL_NODE, END])
         builder.add_conditional_edges(APPROVAL_NODE, route_after_gate, [TOOLS_NODE, REASON_NODE])
         builder.add_edge(TOOLS_NODE, REASON_NODE)

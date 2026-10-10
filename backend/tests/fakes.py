@@ -1,7 +1,7 @@
 """Deterministic test doubles for the agent graph."""
 
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 from langchain_core.callbacks import AsyncCallbackManagerForLLMRun, CallbackManagerForLLMRun
@@ -13,6 +13,7 @@ from langchain_core.tools import BaseTool
 from pydantic import PrivateAttr, SkipValidation
 
 from brain_agent.errors import ThreadBusyError
+from brain_agent.persistence.tool_ledger import ExecutionRecord
 
 
 class ScriptedChatModel(BaseChatModel):
@@ -192,3 +193,43 @@ class FakeRunLedger:
 
     async def get(self, thread_id: str) -> FakeRunRecord | None:
         return self.records.get(thread_id)
+
+
+class InMemoryToolLedger:
+    """In-memory :class:`brain_agent.persistence.tool_ledger.ToolLedger` (same semantics)."""
+
+    def __init__(self) -> None:
+        self.records: dict[str, ExecutionRecord] = {}
+
+    async def begin(
+        self, key: str, thread_id: str, tool_name: str, args_hash: str
+    ) -> ExecutionRecord:
+        existing = self.records.get(key)
+        if existing is not None:
+            return replace(existing, is_new=False)
+        record = ExecutionRecord(key, thread_id, tool_name, args_hash, "started", None, None, 1)
+        self.records[key] = record
+        return replace(record, is_new=True)
+
+    async def complete(self, key: str, result: dict[str, Any]) -> None:
+        self.records[key] = replace(
+            self.records[key], status="succeeded", result=result, error=None
+        )
+
+    async def fail(self, key: str, error: str) -> None:
+        self.records[key] = replace(self.records[key], status="failed", error=error)
+
+    async def restart(self, key: str, args_hash: str) -> None:
+        old = self.records[key]
+        self.records[key] = replace(
+            old,
+            status="started",
+            args_hash=args_hash,
+            result=None,
+            error=None,
+            attempts=old.attempts + 1,
+        )
+
+    async def get(self, key: str) -> ExecutionRecord | None:
+        record = self.records.get(key)
+        return replace(record, is_new=False) if record else None

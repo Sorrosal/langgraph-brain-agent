@@ -3,6 +3,7 @@
 from collections.abc import Awaitable, Sequence
 from typing import Any, Protocol
 
+import structlog
 from langchain_core.language_models import LanguageModelInput
 from langchain_core.messages import AIMessage, AnyMessage, SystemMessage, ToolCall, ToolMessage
 from langchain_core.runnables import Runnable, RunnableConfig
@@ -13,6 +14,8 @@ from langgraph.types import Send, interrupt
 from brain_agent.graph.state import AgentState
 from brain_agent.hitl.models import ActionRequest, ApprovalInterrupt, ApprovalResponse
 from brain_agent.hitl.policy import ApprovalPolicy
+
+logger = structlog.get_logger(__name__)
 
 REASON_NODE = "reason"
 APPROVAL_NODE = "approval_gate"
@@ -100,7 +103,10 @@ def make_approval_gate(tools: Sequence[BaseTool], policy: ApprovalPolicy) -> Gat
     tools_by_name = {tool.name: tool for tool in tools}
 
     async def approval_gate(state: AgentState) -> dict[str, Any]:
-        calls = {str(call["id"]): call for call in pending_tool_calls(state["messages"])}
+        pending = pending_tool_calls(state["messages"])
+        calls = {str(call["id"]): call for call in pending}
+        if len(calls) != len(pending):
+            return _reject_duplicate_ids(pending)
         actions = []
         for call_id, call in calls.items():
             verdict = policy.evaluate(call, tools_by_name.get(call["name"]))
@@ -123,6 +129,19 @@ def make_approval_gate(tools: Sequence[BaseTool], policy: ApprovalPolicy) -> Gat
         return _apply_decisions(state, calls, response)
 
     return approval_gate
+
+
+def _reject_duplicate_ids(pending: list[ToolCall]) -> dict[str, Any]:
+    """Answer the whole batch with errors: ids key approvals and results, so they must be unique."""
+    names = {str(call["id"]): call["name"] for call in pending}
+    text = "Rejected: the batch reuses a tool_call id (duplicate ids); no call was executed."
+    logger.warning("duplicate_tool_call_ids", ids=sorted(names))
+    return {
+        "messages": [
+            ToolMessage(tool_call_id=call_id, name=name, content=text, status="error")
+            for call_id, name in names.items()
+        ]
+    }
 
 
 def _apply_decisions(
