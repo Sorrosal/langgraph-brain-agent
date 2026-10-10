@@ -6,6 +6,7 @@ import pytest
 from langchain_core.messages import AIMessage
 from langchain_core.tools import tool
 
+from brain_agent.errors import LeaseLostError, ThreadBusyError
 from brain_agent.graph.builder import build_graph
 from brain_agent.persistence.postgres import Persistence, open_persistence
 from brain_agent.runtime.recovery import RecoveryWorker
@@ -55,13 +56,14 @@ async def test_mark_running_creates_a_leased_row(persistence: Persistence) -> No
 
 async def test_heartbeat_only_extends_a_lease_held_by_the_owner(persistence: Persistence) -> None:
     runs = persistence.runs
-    await runs.mark_running("t1", "owner-a", 5)
+    token = await runs.mark_running("t1", "owner-a", 5)
     before = await runs.get("t1")
     assert before is not None
 
-    assert await runs.heartbeat("t1", "owner-a", 60) is True
-    assert await runs.heartbeat("t1", "intruder", 60) is False
-    assert await runs.heartbeat("missing", "owner-a", 60) is False
+    assert await runs.heartbeat("t1", "owner-a", token, 60) is True
+    assert await runs.heartbeat("t1", "intruder", token, 60) is False
+    assert await runs.heartbeat("t1", "owner-a", token + 1, 60) is False
+    assert await runs.heartbeat("missing", "owner-a", token, 60) is False
 
     after = await runs.get("t1")
     assert after is not None
@@ -72,15 +74,15 @@ async def test_heartbeat_only_extends_a_lease_held_by_the_owner(persistence: Per
 
 async def test_mark_finished_releases_the_lease(persistence: Persistence) -> None:
     runs = persistence.runs
-    await runs.mark_running("t1", "owner-a", 30)
+    token = await runs.mark_running("t1", "owner-a", 30)
 
-    await runs.mark_finished("t1", "failed", error="boom")
+    assert await runs.mark_finished("t1", "owner-a", token, "failed", error="boom") is True
 
     record = await runs.get("t1")
     assert record is not None
     assert (record.status, record.owner, record.lease_expires_at) == ("failed", None, None)
     assert record.last_error == "boom"
-    assert await runs.heartbeat("t1", "owner-a", 30) is False
+    assert await runs.heartbeat("t1", "owner-a", token, 30) is False
 
 
 async def test_mark_running_resets_attempts_unless_told_otherwise(
@@ -102,6 +104,97 @@ async def test_mark_running_resets_attempts_unless_told_otherwise(
     assert reset.attempts == 0
 
 
+async def test_fencing_token_increments_on_every_claim(persistence: Persistence) -> None:
+    runs = persistence.runs
+    first = await runs.mark_running("t1", "a", 30)
+    again = await runs.mark_running("t1", "a", 30)
+    await _expire_lease(persistence, "t1")
+    assert await runs.claim_orphans("rescuer", 30, 5) == ["t1"]
+    claimed = await runs.get("t1")
+    taken = await runs.mark_running("t1", "rescuer", 30, reset_attempts=False)
+
+    assert claimed is not None
+    assert (first, again, claimed.fencing_token, taken) == (1, 2, 3, 4)
+
+
+async def test_mark_running_refuses_a_live_foreign_lease(persistence: Persistence) -> None:
+    runs = persistence.runs
+    token = await runs.mark_running("t1", "a", 30)
+
+    with pytest.raises(ThreadBusyError):
+        await runs.mark_running("t1", "b", 30)
+    record = await runs.get("t1")
+    assert record is not None
+    assert (record.owner, record.fencing_token) == ("a", token)
+
+    await _expire_lease(persistence, "t1")
+    assert await runs.mark_running("t1", "b", 30) == token + 1  # expired: takeover allowed
+
+
+async def test_a_stale_owner_cannot_overwrite_status(persistence: Persistence) -> None:
+    runs = persistence.runs
+    stale = await runs.mark_running("t1", "a", 30)
+    await _expire_lease(persistence, "t1")
+    fresh = await runs.mark_running("t1", "b", 30)
+
+    assert await runs.heartbeat("t1", "a", stale, 30) is False
+    assert await runs.record_error("t1", "a", stale, "late") is False
+    assert await runs.mark_finished("t1", "a", stale, "completed") is False
+
+    record = await runs.get("t1")
+    assert record is not None
+    assert (record.status, record.owner, record.fencing_token) == ("running", "b", fresh)
+    assert record.last_error is None
+    assert await runs.mark_finished("t1", "b", fresh, "completed") is True
+
+
+async def test_lease_loss_stops_a_real_run_and_leaves_the_new_owner_alone(
+    persistence: Persistence,
+) -> None:
+    started = asyncio.Event()
+
+    @tool
+    async def slow(query: str) -> str:
+        """Hang until cancelled."""
+        started.set()
+        await asyncio.sleep(30)
+        return query
+
+    graph = build_graph(
+        ScriptedChatModel(script=[tool_call("slow", {"query": "x"}, "call-1")]),
+        [slow],
+        checkpointer=persistence.checkpointer,
+    )
+    runner = AgentRunner(
+        graph, runs=persistence.runs, owner_id="old", lease_seconds=5, heartbeat_interval=0.05
+    )
+    task = asyncio.create_task(runner.run("t1", "go"))
+    await asyncio.wait_for(started.wait(), timeout=10)
+    # The old owner's heartbeat can renew the lease between expiry and takeover: expire again.
+    fresh = None
+    while fresh is None:
+        await _expire_lease(persistence, "t1")
+        try:
+            fresh = await persistence.runs.mark_running("t1", "new", 30)
+        except ThreadBusyError:
+            await asyncio.sleep(0)
+
+    with pytest.raises(LeaseLostError):
+        await asyncio.wait_for(task, timeout=10)
+
+    record = await persistence.runs.get("t1")
+    assert record is not None
+    assert (record.status, record.owner, record.fencing_token) == ("running", "new", fresh)
+
+
+async def test_concurrent_persistence_setup_does_not_race(schema_url: str) -> None:
+    async def open_and_close() -> None:
+        async with open_persistence(schema_url) as opened:
+            await opened.runs.mark_running("t", "o", 30)
+
+    await asyncio.gather(*(open_and_close() for _ in range(3)))
+
+
 async def test_status_check_constraint_rejects_unknown_values(persistence: Persistence) -> None:
     await persistence.runs.mark_running("t1", "o", 30)
 
@@ -114,8 +207,8 @@ async def test_claim_orphans_only_takes_expired_running_runs(persistence: Persis
     runs = persistence.runs
     await runs.mark_running("alive", "other", 300)
     await runs.mark_running("orphan", "dead", 300)
-    await runs.mark_running("done", "other", 300)
-    await runs.mark_finished("done", "completed")
+    token = await runs.mark_running("done", "other", 300)
+    await runs.mark_finished("done", "other", token, "completed")
     for thread_id in ("orphan", "done"):
         await _expire_lease(persistence, thread_id)
 
@@ -253,7 +346,6 @@ async def test_a_run_that_keeps_failing_is_marked_failed_after_max_attempts(
         runner,
         persistence.runs,
         interval_seconds=0.05,
-        lease_seconds=30,
         max_attempts=2,
         batch_size=5,
     )

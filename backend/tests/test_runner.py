@@ -8,7 +8,7 @@ from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, ToolMe
 from langchain_core.tools import BaseTool, tool
 from langgraph.checkpoint.memory import InMemorySaver
 
-from brain_agent.errors import ConfigurationError, ThreadBusyError
+from brain_agent.errors import ConfigurationError, LeaseLostError, ThreadBusyError
 from brain_agent.graph.builder import build_graph
 from brain_agent.graph.nodes import TOOLS_NODE
 from brain_agent.runtime.runner import AgentRunner, RunResult
@@ -405,3 +405,75 @@ async def test_run_on_running_thread_with_pending_work_is_still_busy() -> None:
 
     with pytest.raises(ThreadBusyError):
         await runner.run("thread-1", "again")
+
+
+async def test_lease_loss_stops_the_run_and_raises_without_finishing_it() -> None:
+    ledger = FakeRunLedger()
+    started = asyncio.Event()
+    finished_tool = False
+
+    @tool
+    async def slow(query: str) -> str:
+        """Take long enough to lose the lease."""
+        nonlocal finished_tool
+        started.set()
+        await asyncio.sleep(30)
+        finished_tool = True
+        return query
+
+    model = ScriptedChatModel(script=[tool_call("slow", {"query": "x"}, "call-1")])
+    runner = _ledger_runner(model, ledger, [slow], lease_seconds=1.0, heartbeat_interval=0.02)
+    task = asyncio.create_task(runner.run("thread-1", "go"))
+    await asyncio.wait_for(started.wait(), timeout=5)
+    # Another process takes over the run (e.g. after a long pause of this one).
+    ledger.expire("thread-1")
+    await ledger.mark_running("thread-1", "owner-2", 30)
+
+    with pytest.raises(LeaseLostError) as lost:
+        await asyncio.wait_for(task, timeout=5)
+
+    assert lost.value.thread_id == "thread-1"
+    assert not finished_tool
+    record = ledger.records["thread-1"]
+    assert (record.status, record.owner) == ("running", "owner-2")  # the new owner is untouched
+
+
+async def test_a_stale_owner_cannot_finish_the_run_it_lost() -> None:
+    ledger = FakeRunLedger()
+    token = await ledger.mark_running("t", "old", 30)
+    ledger.expire("t")
+    await ledger.mark_running("t", "new", 30)
+
+    assert await ledger.mark_finished("t", "old", token, "completed") is False
+    assert await ledger.heartbeat("t", "old", token, 30) is False
+    assert ledger.records["t"].status == "running"
+
+
+async def test_fake_mark_running_refuses_a_live_foreign_lease() -> None:
+    ledger = FakeRunLedger()
+    first = await ledger.mark_running("t", "a", 30)
+
+    with pytest.raises(ThreadBusyError):
+        await ledger.mark_running("t", "b", 30)
+    assert await ledger.mark_running("t", "a", 30) == first + 1  # own lease: re-entrant
+    ledger.expire("t")
+    assert await ledger.mark_running("t", "b", 30) == first + 2
+
+
+async def test_run_on_a_thread_leased_to_another_owner_is_busy() -> None:
+    ledger = FakeRunLedger()
+    await ledger.mark_running("thread-1", "someone-else", 30)
+    runner = _ledger_runner(ScriptedChatModel(script=[AIMessage(content="x")]), ledger)
+
+    with pytest.raises(ThreadBusyError):
+        await runner.run("thread-1", "hi")
+
+
+@pytest.mark.parametrize(
+    ("lease", "interval"), [(0, None), (-1, None), (10, 0), (10, -1), (10, 10), (10, 11)]
+)
+def test_runner_validates_lease_and_heartbeat(lease: float, interval: float | None) -> None:
+    graph = build_graph(ScriptedChatModel(script=[]), [], checkpointer=InMemorySaver())
+
+    with pytest.raises(ValueError, match=r"lease_seconds|heartbeat_interval"):
+        AgentRunner(graph, lease_seconds=lease, heartbeat_interval=interval)

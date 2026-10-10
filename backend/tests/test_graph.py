@@ -10,7 +10,7 @@ from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import END
 
 from brain_agent.graph.builder import DEFAULT_RETRY_POLICY, build_graph
-from brain_agent.graph.nodes import TOOLS_NODE, route_after_reason
+from brain_agent.graph.nodes import APPROVAL_NODE, route_after_reason
 from brain_agent.graph.retry import is_transient_error
 from brain_agent.graph.state import AgentState
 from tests.fakes import ScriptedChatModel, tool_call
@@ -194,6 +194,6 @@ def test_route_after_reason() -> None:
     plain: AgentState = {"messages": [AIMessage(content="done")]}
     empty: AgentState = {"messages": []}
 
-    assert route_after_reason(with_tools) == TOOLS_NODE
+    assert route_after_reason(with_tools) == APPROVAL_NODE
     assert route_after_reason(plain) == END
     assert route_after_reason(empty) == END

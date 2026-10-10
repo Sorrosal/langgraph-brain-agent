@@ -15,14 +15,21 @@ from langgraph.store.base import BaseStore
 from langgraph.types import RetryPolicy
 
 from brain_agent.graph.nodes import (
+    APPROVAL_NODE,
     DEFAULT_SYSTEM_PROMPT,
     REASON_NODE,
+    RESOLVE_NODE,
     TOOLS_NODE,
+    make_approval_gate,
+    make_gate_router,
     make_reason_node,
     route_after_reason,
 )
 from brain_agent.graph.retry import is_transient_error
 from brain_agent.graph.state import AgentState
+from brain_agent.hitl.policy import ApprovalPolicy, MetadataApprovalPolicy
+from brain_agent.persistence.tool_ledger import ToolLedger
+from brain_agent.tools.idempotency import make_resolve_uncertain_node, make_tools_node
 
 AgentGraph = CompiledStateGraph[AgentState, None, AgentState, AgentState]
 
@@ -41,9 +48,10 @@ DEFAULT_RETRY_POLICY = RetryPolicy(
 def recursion_limit_for(max_steps: int) -> int:
     """LangGraph superstep budget that lets the step guard, not recursion, end a run.
 
-    Each step is a ``reason`` plus a ``tools`` superstep, followed by one final ``reason``.
+    Each step is a ``reason``, an ``approval_gate``, a ``resolve_uncertain`` and a ``tools``
+    superstep, followed by one final ``reason``.
     """
-    return 2 * max_steps + 5
+    return 4 * max_steps + 5
 
 
 def build_graph(
@@ -55,11 +63,17 @@ def build_graph(
     max_steps: int = DEFAULT_MAX_STEPS,
     system_prompt: str = DEFAULT_SYSTEM_PROMPT,
     retry_policy: RetryPolicy = DEFAULT_RETRY_POLICY,
+    approval_policy: ApprovalPolicy | None = None,
+    tool_ledger: ToolLedger | None = None,
 ) -> AgentGraph:
     """Build and compile the reason/act agent graph.
 
-    ``reason`` calls the model (bound to ``tools`` when any are given) and routes to
-    ``tools`` while the model requests tool calls; ``tools`` always returns to ``reason``.
+    ``reason`` calls the model (bound to ``tools`` when any are given) and routes tool calls to
+    ``approval_gate``, which pauses for a human decision on calls ``approval_policy`` flags
+    (default: :class:`MetadataApprovalPolicy`) and then sends the remaining calls to ``tools``;
+    ``tools`` always returns to ``reason``. With a ``tool_ledger`` every tool call runs
+    exactly once even when the node is replayed after a crash (see
+    :mod:`brain_agent.tools.idempotency`); without one tools are simply executed.
     """
     if max_steps < 1:
         raise ValueError(f"max_steps must be at least 1, got {max_steps}")
@@ -73,9 +87,21 @@ def build_graph(
     builder.add_node(REASON_NODE, reason, retry_policy=retry_policy)
     builder.add_edge(START, REASON_NODE)
     if tools:
-        builder.add_node(TOOLS_NODE, ToolNode(tools))
-        builder.add_conditional_edges(REASON_NODE, route_after_reason, [TOOLS_NODE, END])
-        builder.add_edge(TOOLS_NODE, REASON_NODE)
+        gate = make_approval_gate(tools, approval_policy or MetadataApprovalPolicy())
+        builder.add_node(APPROVAL_NODE, gate)
+        builder.add_node(
+            TOOLS_NODE, make_tools_node(tools, tool_ledger) if tool_ledger else ToolNode(tools)
+        )
+        builder.add_conditional_edges(REASON_NODE, route_after_reason, [APPROVAL_NODE, END])
+        if tool_ledger:
+            builder.add_node(RESOLVE_NODE, make_resolve_uncertain_node(tools, tool_ledger))
+        first = RESOLVE_NODE if tool_ledger else TOOLS_NODE
+        router = make_gate_router(RESOLVE_NODE)
+        builder.add_conditional_edges(APPROVAL_NODE, make_gate_router(first), [first, REASON_NODE])
+        if tool_ledger:  # calls left unanswered: an uncertain call needs a human first
+            builder.add_conditional_edges(TOOLS_NODE, router, [RESOLVE_NODE, REASON_NODE])
+        else:
+            builder.add_edge(TOOLS_NODE, REASON_NODE)
     else:
         builder.add_edge(REASON_NODE, END)
 
