@@ -6,6 +6,8 @@ describe('parseEnv', () => {
     expect(parseEnv({}, true)).toEqual({
       VITE_API_URL: 'http://localhost:8000',
       VITE_APP_NAME: 'Brain Agent',
+      VITE_LANDING_ONLY: false,
+      VITE_BASE_PATH: '/',
     });
   });
 
@@ -18,6 +20,25 @@ describe('parseEnv', () => {
       { VITE_API_URL: 'https://api.example.com/', VITE_APP_NAME: 'Acme' },
       false,
     );
-    expect(env).toEqual({ VITE_API_URL: 'https://api.example.com', VITE_APP_NAME: 'Acme' });
+    expect(env).toMatchObject({ VITE_API_URL: 'https://api.example.com', VITE_APP_NAME: 'Acme' });
+  });
+
+  it('does not require VITE_API_URL in landing-only mode', () => {
+    const env = parseEnv({ VITE_LANDING_ONLY: 'true' }, false);
+    expect(env.VITE_LANDING_ONLY).toBe(true);
+  });
+
+  it('still requires VITE_API_URL when landing-only is explicitly false', () => {
+    expect(() => parseEnv({ VITE_LANDING_ONLY: 'false' }, false)).toThrow();
+  });
+
+  it('normalises the base path with leading and trailing slashes', () => {
+    expect(parseEnv({ VITE_BASE_PATH: 'langgraph-brain-agent' }, true).VITE_BASE_PATH).toBe(
+      '/langgraph-brain-agent/',
+    );
+    expect(parseEnv({ VITE_BASE_PATH: '/langgraph-brain-agent/' }, true).VITE_BASE_PATH).toBe(
+      '/langgraph-brain-agent/',
+    );
+    expect(parseEnv({ VITE_BASE_PATH: '/' }, true).VITE_BASE_PATH).toBe('/');
   });
 });

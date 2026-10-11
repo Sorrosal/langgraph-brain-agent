@@ -19,7 +19,7 @@ Served over FastAPI (SSE streaming, JWT auth) with a React UI and a public landi
   operations work.
 - **React UI** — a Feature-Sliced Design frontend to chat, stream progress and resolve
   approvals.
-- **Landing page** — a public GitHub Pages site describing the project.
+- **Landing page** — a public GitHub Pages site describing the project: https://sorrosal.github.io/langgraph-brain-agent/
 
 ## Roadmap
 
