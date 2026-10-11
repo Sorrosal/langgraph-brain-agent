@@ -26,6 +26,26 @@ from brain_agent.observability.tracing import configure_tracing, instrument_app,
 from brain_agent.runtime.recovery import SupervisedLoop
 
 
+def chain_handler(
+    old: Any, notify: Callable[[], object]
+) -> Callable[[int, FrameType | None], None]:
+    """Signal handler that runs ``notify`` and then keeps the previous handler's semantics.
+
+    ``SIG_DFL`` means the process should terminate, so the default action is restored and the
+    signal re-raised; ``SIG_IGN`` stays ignored; a callable handler is called.
+    """
+
+    def handler(num: int, frame: FrameType | None) -> None:
+        notify()
+        if old == signal.SIG_DFL:
+            signal.signal(num, signal.SIG_DFL)
+            signal.raise_signal(num)
+        elif callable(old):
+            old(num, frame)
+
+    return handler
+
+
 @contextlib.contextmanager
 def _signal_on_termination(on_signal: asyncio.Event) -> Iterator[None]:
     """Set ``on_signal`` when SIGINT/SIGTERM arrives, then defer to the previous handler.
@@ -40,16 +60,8 @@ def _signal_on_termination(on_signal: asyncio.Event) -> Iterator[None]:
     loop = asyncio.get_running_loop()
     previous = {sig: signal.getsignal(sig) for sig in (signal.SIGINT, signal.SIGTERM)}
 
-    def chained(old: Any) -> Callable[[int, FrameType | None], None]:
-        def handler(num: int, frame: FrameType | None) -> None:
-            loop.call_soon_threadsafe(on_signal.set)
-            if callable(old):
-                old(num, frame)
-
-        return handler
-
     for sig, old in previous.items():
-        signal.signal(sig, chained(old))
+        signal.signal(sig, chain_handler(old, lambda: loop.call_soon_threadsafe(on_signal.set)))
     try:
         yield
     finally:
@@ -73,11 +85,14 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        with _signal_on_termination(app.state.shutdown):
-            async with _serve(app):
-                yield
-        if tracer_provider is not None:
-            shutdown_tracing()
+        app.state.shutdown.clear()
+        try:
+            with _signal_on_termination(app.state.shutdown):
+                async with _serve(app):
+                    yield
+        finally:
+            if tracer_provider is not None:
+                shutdown_tracing()
 
     @asynccontextmanager
     async def _serve(app: FastAPI) -> AsyncIterator[None]:

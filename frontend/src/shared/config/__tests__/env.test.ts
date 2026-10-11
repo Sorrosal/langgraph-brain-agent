@@ -23,6 +23,12 @@ describe('parseEnv', () => {
     expect(env).toMatchObject({ VITE_API_URL: 'https://api.example.com', VITE_APP_NAME: 'Acme' });
   });
 
+  it('accepts a same-origin path and rejects other relative values', () => {
+    expect(parseEnv({ VITE_API_URL: '/api/' }, false).VITE_API_URL).toBe('/api');
+    expect(() => parseEnv({ VITE_API_URL: 'api' }, false)).toThrow();
+    expect(() => parseEnv({ VITE_API_URL: '//evil.example.com' }, false)).toThrow();
+  });
+
   it('does not require VITE_API_URL in landing-only mode', () => {
     const env = parseEnv({ VITE_LANDING_ONLY: 'true' }, false);
     expect(env.VITE_LANDING_ONLY).toBe(true);

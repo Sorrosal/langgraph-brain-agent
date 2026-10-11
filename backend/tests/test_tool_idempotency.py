@@ -308,3 +308,28 @@ async def test_a_tool_interrupt_in_the_batch_gets_its_own_resume_value() -> None
     texts = {m.tool_call_id: m.text for m in last["messages"] if isinstance(m, ToolMessage)}
     assert texts == {"a": "sent to a", "q": "answer: yes"}
     assert mailer.sent == ["a"]
+
+
+async def test_tool_error_messages_never_carry_raw_exception_text() -> None:
+    @tool
+    def flaky(to: str) -> str:
+        """Echo."""
+        return to
+
+    ledger = InMemoryToolLedger()
+    model = ScriptedChatModel(
+        script=[
+            tool_call("flaky", {"to": {"password": "hunter2"}}, "c1"),
+            AIMessage(content="Failed."),
+        ]
+    )
+    graph = build_graph(model, [flaky], checkpointer=InMemorySaver(), tool_ledger=ledger)
+    runner = AgentRunner(graph)
+    await runner.run("t-err", "go")
+
+    values = (await runner.get_state("t-err")).values
+    [message] = [m for m in values["messages"] if isinstance(m, ToolMessage)]
+    assert message.status == "error"
+    assert message.text == "ToolInvocationError"
+    assert "hunter2" not in str(message.content)
+    assert all("hunter2" not in (r.error or "") for r in ledger.records.values())

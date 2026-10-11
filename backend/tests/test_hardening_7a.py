@@ -4,6 +4,7 @@ import asyncio
 import io
 import json
 import logging
+import signal
 from collections.abc import Iterator
 from typing import Any
 
@@ -19,6 +20,7 @@ from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
+from brain_agent.api.app import chain_handler
 from brain_agent.api.ratelimit import RateLimiter
 from brain_agent.errors import (
     IntegrationError,
@@ -266,3 +268,29 @@ async def test_a_run_produces_runner_and_tool_spans_and_counters(
     assert "brain_agent.runs.started" in points
     assert {"status": "completed"} in points["brain_agent.runs.completed"]
     assert {"outcome": "executed"} in points["brain_agent.tool_executions"]
+
+
+def _chain(old: Any, monkeypatch: pytest.MonkeyPatch) -> tuple[list[str], list[Any]]:
+    events: list[str] = []
+    raised: list[Any] = []
+    monkeypatch.setattr(signal, "signal", lambda num, handler: raised.append(("set", handler)))
+    monkeypatch.setattr(signal, "raise_signal", lambda num: raised.append(("raise", num)))
+    chain_handler(old, lambda: events.append("notified"))(signal.SIGTERM, None)
+    return events, raised
+
+
+def test_chained_handler_re_raises_the_default_action(monkeypatch: pytest.MonkeyPatch) -> None:
+    events, raised = _chain(signal.SIG_DFL, monkeypatch)
+    assert events == ["notified"]
+    assert raised == [("set", signal.SIG_DFL), ("raise", signal.SIGTERM)]
+
+
+def test_chained_handler_keeps_ignoring(monkeypatch: pytest.MonkeyPatch) -> None:
+    events, raised = _chain(signal.SIG_IGN, monkeypatch)
+    assert events == ["notified"] and raised == []
+
+
+def test_chained_handler_calls_a_previous_callable(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[int] = []
+    events, raised = _chain(lambda num, frame: calls.append(num), monkeypatch)
+    assert events == ["notified"] and calls == [signal.SIGTERM] and raised == []

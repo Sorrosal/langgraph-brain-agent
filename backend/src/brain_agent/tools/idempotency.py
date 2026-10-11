@@ -33,7 +33,7 @@ from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import BaseTool
 from langgraph.errors import GraphBubbleUp
 from langgraph.prebuilt import ToolNode
-from langgraph.prebuilt.tool_node import ToolCallRequest
+from langgraph.prebuilt.tool_node import ToolCallRequest, ToolInvocationError
 from langgraph.types import Command, Send, interrupt
 
 from brain_agent.errors import (
@@ -119,6 +119,13 @@ def _skipped(call: ToolCall) -> ToolMessage:
     return ToolMessage(
         content=SKIPPED_ERROR, name=call["name"], tool_call_id=str(call["id"]), status="error"
     )
+
+
+def _handle_tool_errors(exc: Exception) -> str:
+    """Text of a tool error answered to the model: sanitized; other exceptions propagate."""
+    if isinstance(exc, ToolInvocationError):
+        return safe_error(exc)
+    raise exc
 
 
 def make_execution_wrapper(
@@ -259,7 +266,11 @@ def make_tools_node(tools: Sequence[BaseTool], ledger: ToolLedger) -> ToolsNode:
     the final backstop.
     """
     tools_by_name = {tool.name: tool for tool in tools}
-    tool_node = ToolNode(tools, awrap_tool_call=make_execution_wrapper(ledger))
+    tool_node = ToolNode(
+        tools,
+        handle_tool_errors=_handle_tool_errors,
+        awrap_tool_call=make_execution_wrapper(ledger),
+    )
 
     async def tools_node(state: Any, config: RunnableConfig) -> Any:
         if await _uncertain_calls(state, tools_by_name, ledger, _thread_id(config)):
