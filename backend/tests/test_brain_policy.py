@@ -373,3 +373,70 @@ async def test_tightened_rule_before_resume_does_not_break_resume(tmp_path: Path
 
     assert sorted(recorder.runs) == ["lookup:q", "send:1"]
     assert final["messages"][-1].content == "done"
+
+
+# --- edits are re-checked against block rules ---------------------------------------------
+
+RULES_NO_HUGE = (
+    RULES
+    + """  - id: no-huge
+    description: No sends above 1000.
+    when: {tool: send_thing, args: {n: {gt: 1000}}}
+    action: block
+    reason: Too many.
+"""
+)
+
+
+async def test_edit_into_a_blocked_call_is_refused(tmp_path: Path) -> None:
+    recorder = Recorder()
+    model = ScriptedChatModel(
+        script=[_batch(_call("send_thing", {"n": 1}, "c1")), AIMessage(content="ok")]
+    )
+    graph = build_graph(
+        model,
+        recorder.tools,
+        checkpointer=InMemorySaver(),
+        rules=_engine(tmp_path, RULES_NO_HUGE),
+    )
+    paused = await graph.ainvoke({"messages": [HumanMessage("go")]}, CONFIG)
+    assert paused["__interrupt__"]
+
+    edit: Command[Any] = Command(
+        resume={"decisions": {"c1": {"type": "edit", "args": {"n": 5000}}}}
+    )
+    final = await graph.ainvoke(edit, CONFIG)
+
+    assert recorder.runs == []
+    [message] = [m for m in final["messages"] if isinstance(m, ToolMessage)]
+    assert message.status == "error"
+    assert message.content == "Edited call blocked by rule no-huge: Too many."
+    assert final["approvals"] == [
+        {
+            "action_id": "c1",
+            "tool_name": "send_thing",
+            "decision": "blocked",
+            "rule_ids": ["no-huge"],
+        }
+    ]
+    [ai] = [m for m in final["messages"] if isinstance(m, AIMessage) and m.tool_calls]
+    assert ai.tool_calls[0]["args"] == {"n": 1}  # the unsafe edit is not kept
+
+
+async def test_edit_within_the_rules_still_runs(tmp_path: Path) -> None:
+    recorder = Recorder()
+    model = ScriptedChatModel(
+        script=[_batch(_call("send_thing", {"n": 1}, "c1")), AIMessage(content="ok")]
+    )
+    graph = build_graph(
+        model,
+        recorder.tools,
+        checkpointer=InMemorySaver(),
+        rules=_engine(tmp_path, RULES_NO_HUGE),
+    )
+    await graph.ainvoke({"messages": [HumanMessage("go")]}, CONFIG)
+
+    edit: Command[Any] = Command(resume={"decisions": {"c1": {"type": "edit", "args": {"n": 7}}}})
+    await graph.ainvoke(edit, CONFIG)
+
+    assert recorder.runs == ["send:7"]

@@ -43,6 +43,7 @@ class ArgCondition(_Model):
     not_in: list[Any] | None = None
     matches: str | None = None
     not_matches: str | None = None
+    any_not_matches: str | None = None
     gt: float | None = None
     gte: float | None = None
     lt: float | None = None
@@ -54,7 +55,7 @@ class ArgCondition(_Model):
         given = self.model_fields_set
         if not given:
             raise ValueError("a condition needs at least one operator")
-        for name in ("matches", "not_matches"):
+        for name in ("matches", "not_matches", "any_not_matches"):
             pattern = getattr(self, name)
             if pattern is not None:
                 try:
@@ -69,6 +70,8 @@ class ArgCondition(_Model):
             return False
         if value is _MISSING:
             return self._holds_for_missing()
+        if self.any_not_matches is not None and not _any_token_fails(self.any_not_matches, value):
+            return False
         # A list satisfies a condition when any element does; ``exists`` concerns the list.
         candidates = value if isinstance(value, list) else [value]
         return any(self._holds_for(item) for item in candidates)
@@ -112,6 +115,21 @@ class ArgCondition(_Model):
             and (lt is None or number < lt)
             and (lte is None or number <= lte)
         )
+
+
+_TOKEN_SPLIT = re.compile(r"[,;\s]+")
+
+
+def _any_token_fails(pattern: str, value: Any) -> bool:
+    """Whether some recipient-like token of ``value`` does not match ``pattern``.
+
+    Strings are split on commas, semicolons and whitespace (lists: per element), so one string
+    holding several addresses is judged address by address. No tokens (an empty or blank
+    value) counts as failing, to fail closed.
+    """
+    items = value if isinstance(value, list) else [value]
+    tokens = [t for item in items for t in _TOKEN_SPLIT.split(str(item)) if t]
+    return not tokens or any(re.search(pattern, token) is None for token in tokens)
 
 
 def _as_number(value: Any) -> float | None:
@@ -285,6 +303,15 @@ class YamlRuleSource:
         return "|".join(parts)
 
 
+_UNREADABLE = "<unreadable>"
+
+
+def _require_hard_rules(ruleset: RuleSet) -> RuleSet:
+    if not ruleset.hard_rules:
+        raise RulesError("the rules define no hard rules; refusing to run unconstrained")
+    return ruleset
+
+
 class RulesEngine:
     """Evaluates hard rules against tool calls, reloading from its source when it changes."""
 
@@ -295,9 +322,13 @@ class RulesEngine:
 
     @classmethod
     def from_source(cls, source: RuleSource) -> Self:
-        """Engine over ``source``'s current rules (raises :class:`RulesError` if invalid)."""
+        """Engine over ``source``'s current rules.
+
+        Fails closed: raises :class:`RulesError` if the rules are invalid or define no hard
+        rules, instead of starting an agent that nothing constrains.
+        """
         fingerprint = source.fingerprint()
-        engine = cls(source.load(), source)
+        engine = cls(_require_hard_rules(source.load()), source)
         engine._fingerprint = fingerprint
         return engine
 
@@ -319,11 +350,14 @@ class RulesEngine:
         """
         if self._source is None:
             return False
-        fingerprint = self._source.fingerprint()
+        try:
+            fingerprint = self._source.fingerprint()
+        except OSError:  # e.g. a file deleted mid-scan: treat as changed and try to reload
+            fingerprint = _UNREADABLE
         if fingerprint == self._fingerprint and not force:
             return False
         self._fingerprint = fingerprint
-        self._ruleset = self._source.load()
+        self._ruleset = _require_hard_rules(self._source.load())
         return True
 
     def evaluate(self, tool_name: str, args: Mapping[str, Any]) -> list[RuleMatch]:

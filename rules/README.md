@@ -10,6 +10,11 @@ Declarative rules that govern the agent. Every `*.yaml` file in this directory i
 Edits are picked up without a restart. If an edit is invalid, the last good rules stay active
 and the error is logged.
 
+**Fail closed.** The agent refuses to start if the rules cannot be loaded or define no hard rules
+(an empty directory included). Later edits that are invalid, or that remove every hard rule, are
+ignored the same way: the last good rules stay active. A rule file that disappears mid-reload is
+treated as a change; if the reload fails, the last good rules also stay.
+
 ## Format
 
 ```yaml
@@ -58,6 +63,7 @@ one or more operators, all of which must hold:
 | `in` / `not_in` | is / is not one of the given list |
 | `matches` / `not_matches` | does / does not match the regex (`re.search`, so anchor with `^`/`$`) |
 | `gt`, `gte`, `lt`, `lte` | compares to a number (numeric strings are accepted; booleans and other text never match) |
+| `any_not_matches` | has some recipient that does not match the regex (see below) |
 | `exists` | is present (`true`) or absent (`false`); `null` counts as present |
 
 **Missing arguments.** Only `exists: false` and the negative operators (`not_equals`, `not_in`,
@@ -66,3 +72,17 @@ one or more operators, all of which must hold:
 **List values.** An operator is satisfied if *any element* of the list satisfies it
 (`not_matches` on `to: [a@acme.com, b@gmail.com]` matches because `b@gmail.com` does). An empty
 list matches nothing. `exists` applies to the list itself.
+
+**Recipient lists (`any_not_matches`).** `to` may be a list or one string holding several
+addresses (`a@acme.com, b@gmail.com`). `any_not_matches` splits strings on commas, semicolons and
+whitespace (lists: each element), and holds if *any* piece fails the regex, so a rule can require
+approval unless **every** recipient is internal. Pieces that are not a bare address, such as a
+display name (`Bob <b@acme.com>` splits into `Bob` and `<b@acme.com>`), fail the shipped regex and
+need approval: that is deliberate. A blank value and a missing argument also hold (fail closed).
+The shipped external-email rule uses `any_not_matches: '^<?[^@<>\s]+@acme[.]com>?$'`.
+
+## Human edits
+
+When a reviewer edits a call, the edited call is checked against the `block` rules again. If it is
+now blocked it is refused with `Edited call blocked by rule <ids>: <reason>` and the original
+arguments are kept.

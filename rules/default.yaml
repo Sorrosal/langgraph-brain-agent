@@ -28,7 +28,7 @@ hard_rules:
     when:
       tool: send_email
       args:
-        to: { not_matches: '@acme[.]com$' }
+        to: { any_not_matches: '^<?[^@<>\s]+@acme[.]com>?$' }
     action: require_approval
     risk: high
     reason: External recipients need a human check before anything is sent.

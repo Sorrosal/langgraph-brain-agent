@@ -52,12 +52,13 @@ def step_limit_message(max_steps: int) -> str:
 def make_reason_node(
     model: Runnable[LanguageModelInput, AIMessage],
     *,
-    system_prompt: str | Callable[[], str] = DEFAULT_SYSTEM_PROMPT,
+    system_prompt: str | Callable[[str | None], str] = DEFAULT_SYSTEM_PROMPT,
     max_steps: int | None = None,
 ) -> ReasonNode:
     """Create the node that calls the (already tool-bound) chat model.
 
-    ``system_prompt`` may be a callable, evaluated on every call (so rule reloads apply).
+    ``system_prompt`` may be a callable, evaluated on every call (so rule reloads apply); it
+    receives the extra context: the running conversation summary and the recalled memories.
 
     When ``max_steps`` is set and the run has already taken that many steps, the node skips
     the model and returns a final message explaining the limit.
@@ -68,12 +69,26 @@ def make_reason_node(
         if max_steps is not None and step_count >= max_steps:
             return {"messages": [AIMessage(content=step_limit_message(max_steps))]}
 
-        text = system_prompt() if callable(system_prompt) else system_prompt
+        extra = _extra_context(state)
+        text = system_prompt(extra) if callable(system_prompt) else _join(system_prompt, extra)
         prompt = [SystemMessage(content=text), *state["messages"]]
         response = await model.ainvoke(prompt, config)
         return {"messages": [response], "step_count": step_count + 1}
 
     return reason
+
+
+def _extra_context(state: AgentState) -> str | None:
+    parts = []
+    if summary := state.get("summary"):
+        parts.append(f"Conversation summary so far:\n{summary}")
+    if context := state.get("context"):
+        parts.append(context)
+    return "\n\n".join(parts) or None
+
+
+def _join(prompt: str, extra: str | None) -> str:
+    return f"{prompt}\n\n{extra}" if extra else prompt
 
 
 def route_after_reason(state: AgentState) -> str:
@@ -134,12 +149,21 @@ def make_approval_gate(tools: Sequence[BaseTool], policy: ApprovalPolicy) -> Gat
     return approval_gate
 
 
-def make_await_approval() -> GateNode:
+def make_await_approval(
+    tools: Sequence[BaseTool] = (), policy: ApprovalPolicy | None = None
+) -> GateNode:
     """Create the node that pauses for a human decision on the calls in ``pending_review``.
 
     The whole batch waits. On resume LangGraph re-runs this node from its start, so it only
-    reads the persisted verdicts and never consults the (hot-reloadable) policy.
+    reads the persisted verdicts. The one exception is an ``edit`` decision: the edited call is
+    re-checked against the ``policy``'s block verdicts (a live policy can only tighten) and
+    refused if it is now blocked.
     """
+    tools_by_name = {tool.name: tool for tool in tools}
+
+    def blocking_verdict(call: ToolCall) -> PolicyVerdict | None:
+        verdict = policy.evaluate(call, tools_by_name.get(call["name"])) if policy else None
+        return verdict if verdict and verdict.blocked else None
 
     async def await_approval(state: AgentState) -> dict[str, Any]:
         review = state.get("pending_review") or {}
@@ -163,19 +187,21 @@ def make_await_approval() -> GateNode:
         raw = interrupt(ApprovalInterrupt(actions=actions).model_dump())
         response = ApprovalResponse.model_validate(raw)
         response.ensure_covers(actions)
-        decided = _apply_decisions(state, calls, response)
+        decided = _apply_decisions(state, calls, response, blocking_verdict)
         return {**decided, "pending_review": None}
 
     return await_approval
 
 
-def _refuse_blocked(blocked: list[tuple[ToolCall, PolicyVerdict]]) -> dict[str, Any]:
+def _refuse_blocked(
+    blocked: list[tuple[ToolCall, PolicyVerdict]], *, prefix: str = "Blocked"
+) -> dict[str, Any]:
     """Answer blocked calls with an error and an audit entry; they never run nor wait."""
     messages: list[AnyMessage] = []
     approvals: list[dict[str, Any]] = []
     for call, verdict in blocked:
         call_id, name = str(call["id"]), call["name"]
-        text = f"Blocked by rule {', '.join(verdict.rule_ids)}: {verdict.reason}"
+        text = f"{prefix} by rule {', '.join(verdict.rule_ids)}: {verdict.reason}"
         messages.append(ToolMessage(tool_call_id=call_id, name=name, content=text, status="error"))
         approvals.append(
             {
@@ -203,7 +229,10 @@ def _reject_duplicate_ids(pending: list[ToolCall]) -> dict[str, Any]:
 
 
 def _apply_decisions(
-    state: AgentState, calls: dict[str, ToolCall], response: ApprovalResponse
+    state: AgentState,
+    calls: dict[str, ToolCall],
+    response: ApprovalResponse,
+    blocking_verdict: Callable[[ToolCall], PolicyVerdict | None],
 ) -> dict[str, Any]:
     """Turn decisions into state updates: edited call, answers for skipped calls, audit trail."""
     last_ai = next(m for m in reversed(state["messages"]) if isinstance(m, AIMessage))
@@ -217,7 +246,13 @@ def _apply_decisions(
         )
         if decision.type == "edit":
             index = next(i for i, c in enumerate(updated_calls) if c["id"] == call_id)
-            updated_calls[index] = {**updated_calls[index], "args": decision.args}
+            edited: ToolCall = {**updated_calls[index], "args": decision.args}
+            if (verdict := blocking_verdict(edited)) is not None:
+                refused = _refuse_blocked([(edited, verdict)], prefix="Edited call blocked")
+                messages += refused["messages"]
+                approvals[-1] = refused["approvals"][0]
+                continue
+            updated_calls[index] = edited
         elif decision.type == "reject":
             text = f"Rejected by human reviewer: {decision.reason or 'no reason given'}"
             messages.append(

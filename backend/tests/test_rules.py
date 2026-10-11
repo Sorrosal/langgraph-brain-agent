@@ -7,6 +7,7 @@ from typing import Any
 import pytest
 
 from brain_agent.brain.rules import RulesEngine, RulesError, YamlRuleSource, load_rules
+from brain_agent.config import REPO_ROOT
 
 RULE = """
 version: 1
@@ -225,3 +226,108 @@ def test_broken_edit_keeps_last_good_rules_until_fixed(tmp_path: Path) -> None:
     assert [m.rule_id for m in engine.evaluate("send_email", {})] == ["one"]
     with pytest.raises(RulesError):
         engine.reload(force=True)
+
+
+# --- fail closed --------------------------------------------------------------------------
+
+
+def test_engine_refuses_to_start_without_hard_rules(tmp_path: Path) -> None:
+    with pytest.raises(RulesError, match="no hard rules"):
+        RulesEngine.from_source(YamlRuleSource(tmp_path))
+    _write(tmp_path, "a.yaml", "version: 1\nguidelines:\n  - {id: g, text: Be nice}\n")
+    with pytest.raises(RulesError, match="no hard rules"):
+        RulesEngine.from_source(YamlRuleSource(tmp_path))
+    _write(tmp_path, "a.yaml", "version: 1\nhard_rules: [oops")
+    with pytest.raises(RulesError):
+        RulesEngine.from_source(YamlRuleSource(tmp_path))
+
+
+def test_emptied_rules_keep_the_last_good_set(tmp_path: Path) -> None:
+    _write(tmp_path, "a.yaml", _rule("one"))
+    engine = RulesEngine.from_source(YamlRuleSource(tmp_path))
+    path = tmp_path / "a.yaml"
+    path.write_text("version: 1\n", encoding="utf-8")
+    os.utime(path, ns=(path.stat().st_atime_ns, path.stat().st_mtime_ns + 5_000_000_000))
+
+    assert [m.rule_id for m in engine.evaluate("send_email", {})] == ["one"]
+
+
+class FlakySource:
+    """Source whose fingerprint fails like a file deleted between listing and stat."""
+
+    def __init__(self, directory: Path) -> None:
+        self.inner = YamlRuleSource(directory)
+        self.vanished = False
+        self.loads = 0
+
+    def load(self) -> Any:
+        self.loads += 1
+        return self.inner.load()
+
+    def fingerprint(self) -> str:
+        if self.vanished:
+            raise FileNotFoundError("a.yaml")
+        return self.inner.fingerprint()
+
+
+def test_fingerprint_oserror_does_not_crash_and_keeps_last_good(tmp_path: Path) -> None:
+    _write(tmp_path, "a.yaml", _rule("one"))
+    source = FlakySource(tmp_path)
+    engine = RulesEngine.from_source(source)
+    source.vanished = True
+    loads = source.loads
+
+    assert [m.rule_id for m in engine.evaluate("send_email", {})] == ["one"]
+    assert source.loads == loads + 1  # treated as changed: a reload was attempted
+
+    (tmp_path / "a.yaml").unlink()  # reload now fails (no hard rules): still the last good set
+    assert [m.rule_id for m in engine.evaluate("send_email", {})] == ["one"]
+
+
+# --- shipped external-email rule ----------------------------------------------------------
+
+
+def _default_requires_approval(to: Any) -> bool:
+    engine = RulesEngine(load_rules(REPO_ROOT / "rules"))
+    matched = engine.evaluate("send_email", {"to": to})
+    return "external-email-needs-approval" in {m.rule_id for m in matched}
+
+
+@pytest.mark.parametrize(
+    "to",
+    [
+        "a@acme.com, b@gmail.com",
+        "b@gmail.com, a@acme.com",
+        "b@gmail.com,a@acme.com",
+        "a@acme.com;b@gmail.com",
+        "a@acme.com b@gmail.com",
+        "Bob <b@gmail.com>",
+        "Bob <b@gmail.com>, Al <a@acme.com>",
+        "a@acme.com@gmail.com",
+        "a@acme.com.evil.io",
+        ["a@acme.com", "b@gmail.com"],
+        ["a@acme.com, b@gmail.com", "c@acme.com"],
+        "",
+        None,
+    ],
+)
+def test_external_email_rule_cannot_be_bypassed(to: Any) -> None:
+    assert _default_requires_approval(to) is True
+
+
+@pytest.mark.parametrize(
+    "to",
+    ["a@acme.com", "a@acme.com, b@acme.com", "a@acme.com;b@acme.com", ["a@acme.com", "b@acme.com"]],
+)
+def test_external_email_rule_allows_all_internal_recipients(to: Any) -> None:
+    assert _default_requires_approval(to) is False
+
+
+def test_any_not_matches_splits_strings_and_lists(tmp_path: Path) -> None:
+    engine = _engine(tmp_path, {"to": "{any_not_matches: '^ok$'}"})
+
+    assert _matches(engine, {"to": "ok, nope"})
+    assert _matches(engine, {"to": ["ok", "ok;nope"]})
+    assert not _matches(engine, {"to": "ok ok;ok"})
+    assert _matches(engine, {"to": " ,"})
+    assert _matches(engine, {})  # missing arguments fail closed like the other negative operators
