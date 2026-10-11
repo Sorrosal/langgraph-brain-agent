@@ -16,11 +16,11 @@ function renderComposer(disabled = false) {
   function Wrapper({ children }: { children: ReactNode }) {
     return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
   }
-  const onSent = vi.fn();
-  render(<MessageComposer threadId="t1" disabled={disabled} onSent={onSent} />, {
-    wrapper: Wrapper,
-  });
-  return { onSent, box: screen.getByRole('textbox', { name: /message/i }) };
+  const onSubmitting = vi.fn();
+  const onSubmitFailed = vi.fn();
+  const handlers = { onSubmitting, onSubmitFailed };
+  render(<MessageComposer threadId="t1" disabled={disabled} {...handlers} />, { wrapper: Wrapper });
+  return { onSubmitting, onSubmitFailed, box: screen.getByRole('textbox', { name: /message/i }) };
 }
 
 describe('MessageComposer', () => {
@@ -33,13 +33,13 @@ describe('MessageComposer', () => {
   });
 
   it('sends on Enter, clears the box and reports the started run', async () => {
-    const { onSent, box } = renderComposer();
+    const { onSubmitting, box } = renderComposer();
     await userEvent.type(box, 'hello{Enter}');
     await waitFor(() => {
       expect(post).toHaveBeenCalledWith('/threads/t1/messages', { content: 'hello' });
     });
     await waitFor(() => {
-      expect(onSent).toHaveBeenCalled();
+      expect(onSubmitting).toHaveBeenCalled();
     });
     expect(box).toHaveValue('');
   });
@@ -65,13 +65,14 @@ describe('MessageComposer', () => {
 
   it('explains a 409 (busy) with a toast and keeps the text', async () => {
     post.mockRejectedValue(new ApiError('Thread is busy', 409, { code: 'thread_busy' }));
-    const { box, onSent } = renderComposer();
+    const { box, onSubmitting, onSubmitFailed } = renderComposer();
     await userEvent.type(box, 'hello{Enter}');
     await waitFor(() => {
       expect(toast.error).toHaveBeenCalledWith(expect.stringMatching(/busy/i));
     });
     expect(box).toHaveValue('hello');
-    expect(onSent).not.toHaveBeenCalled();
+    expect(onSubmitting).toHaveBeenCalled();
+    expect(onSubmitFailed).toHaveBeenCalled();
   });
 
   it('tells the user how long to wait on a 429', async () => {

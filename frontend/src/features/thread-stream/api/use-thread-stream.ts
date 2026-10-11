@@ -92,7 +92,10 @@ export function useThreadStream(threadId: string | undefined) {
   return {
     state,
     markRunStarted: () => {
-      dispatch({ type: 'run_started' });
+      dispatch({ type: 'run_started', cursor: state.lastEventId });
+    },
+    markRunStartFailed: () => {
+      dispatch({ type: 'run_start_failed' });
     },
   };
 }

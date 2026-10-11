@@ -66,7 +66,9 @@ export interface StreamState {
 
 export type StreamAction =
   | { type: 'event'; event: StreamEvent }
-  | { type: 'run_started' }
+  /** `cursor` is the lastEventId when the request began; later events are never overridden. */
+  | { type: 'run_started'; cursor: number }
+  | { type: 'run_start_failed' }
   | { type: 'reset' };
 
 export const initialStreamState: StreamState = {
@@ -145,7 +147,10 @@ export function streamReducer(state: StreamState, action: StreamAction): StreamS
       if (action.event.id <= state.lastEventId) return state;
       return { ...applyEvent(state, action.event), lastEventId: action.event.id };
     case 'run_started':
+      if (state.lastEventId > action.cursor) return state;
       return { ...initialStreamState, lastEventId: state.lastEventId, runStatus: 'running' };
+    case 'run_start_failed':
+      return { ...state, runStatus: null };
     case 'reset':
       return initialStreamState;
   }

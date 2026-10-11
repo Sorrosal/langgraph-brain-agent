@@ -9,10 +9,17 @@ interface MessageComposerProps {
   threadId: string;
   /** A run is active or waiting for approval. */
   disabled: boolean;
-  onSent: () => void;
+  /** Called before the request, so the run is marked started ahead of any streamed event. */
+  onSubmitting: () => void;
+  onSubmitFailed: () => void;
 }
 
-export function MessageComposer({ threadId, disabled, onSent }: MessageComposerProps) {
+export function MessageComposer({
+  threadId,
+  disabled,
+  onSubmitting,
+  onSubmitFailed,
+}: MessageComposerProps) {
   const [text, setText] = useState('');
   const { mutate: send, isPending } = useSendMessage(threadId);
   const blocked = disabled || isPending;
@@ -20,11 +27,12 @@ export function MessageComposer({ threadId, disabled, onSent }: MessageComposerP
 
   function submit() {
     if (blocked || !content) return;
+    onSubmitting();
     send(content, {
       onSuccess: () => {
         setText('');
-        onSent();
       },
+      onError: onSubmitFailed,
     });
   }
 

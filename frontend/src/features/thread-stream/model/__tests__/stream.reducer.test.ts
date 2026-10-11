@@ -145,8 +145,23 @@ describe('streamReducer', () => {
 
   it('run_started resets live state but keeps the dedupe cursor', () => {
     const failed = run([ev(7, 'run_failed', { code: 'run_failed', message: 'x' })]);
-    const state = streamReducer(failed, { type: 'run_started' });
+    const state = streamReducer(failed, { type: 'run_started', cursor: 7 });
     expect(state).toMatchObject({ runStatus: 'running', error: null, lastEventId: 7 });
+  });
+
+  it('run_started with a stale cursor keeps what the stream already delivered', () => {
+    const done = run([ev(5, 'token', { text: 'a' }), ev(6, 'run_completed', { status: 'done' })]);
+    expect(streamReducer(done, { type: 'run_started', cursor: 4 })).toBe(done);
+    const text = run([ev(5, 'token', { text: 'a' })]);
+    expect(streamReducer(text, { type: 'run_started', cursor: 4 })).toBe(text);
+  });
+
+  it('run_start_failed hands the status back without touching events or cursor', () => {
+    const started = run([{ type: 'run_started', cursor: 0 }, ev(2, 'token', { text: 'a' })]);
+    expect(streamReducer(started, { type: 'run_start_failed' })).toEqual({
+      ...started,
+      runStatus: null,
+    });
   });
 
   it('reset returns to the initial state', () => {

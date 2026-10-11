@@ -41,11 +41,12 @@ function renderReview(interrupt: PendingInterrupt) {
   function Wrapper({ children }: { children: ReactNode }) {
     return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
   }
-  const onSubmitted = vi.fn();
-  render(<ApprovalReview threadId="t1" interrupt={interrupt} onSubmitted={onSubmitted} />, {
+  const onSubmitting = vi.fn();
+  const handlers = { onSubmitting, onSubmitFailed: vi.fn() };
+  render(<ApprovalReview threadId="t1" interrupt={interrupt} {...handlers} />, {
     wrapper: Wrapper,
   });
-  return onSubmitted;
+  return onSubmitting;
 }
 
 function choose(card: string, option: string) {
@@ -86,7 +87,7 @@ describe('ApprovalReview', () => {
   });
 
   it('posts all decisions at once with the backend payload shape', async () => {
-    const onSubmitted = renderReview(approval(email, del));
+    const onSubmitting = renderReview(approval(email, del));
     await choose('send_email', 'Edit');
     await replaceText(/arguments/i, '{"to": "z@z.zz"}');
     await choose('delete_file', 'Reject');
@@ -102,7 +103,7 @@ describe('ApprovalReview', () => {
       });
     });
     await waitFor(() => {
-      expect(onSubmitted).toHaveBeenCalled();
+      expect(onSubmitting).toHaveBeenCalled();
     });
   });
 

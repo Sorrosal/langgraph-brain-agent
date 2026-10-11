@@ -17,8 +17,9 @@ import type { ApprovalDraft, UncertainDraft } from '../model/review';
 interface ApprovalReviewProps {
   threadId: string;
   interrupt: PendingInterrupt;
-  /** The decisions were accepted and the run resumed. */
-  onSubmitted: () => void;
+  /** Called before the decisions are sent, so the run is marked started first. */
+  onSubmitting: () => void;
+  onSubmitFailed: () => void;
 }
 
 interface Option<T extends string> {
@@ -97,11 +98,13 @@ function initialApprovalDraft(type: ApprovalDraft['type'], action: ActionRequest
 function ApprovalForm({
   threadId,
   interrupt,
-  onSubmitted,
+  onSubmitting,
+  onSubmitFailed,
 }: {
   threadId: string;
   interrupt: ApprovalInterrupt;
-  onSubmitted: () => void;
+  onSubmitting: () => void;
+  onSubmitFailed: () => void;
 }) {
   const [drafts, setDrafts] = useState<Partial<Record<string, ApprovalDraft>>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -119,7 +122,8 @@ function ApprovalForm({
       setErrors(result.errors);
       return;
     }
-    mutate(result.payload, { onSuccess: onSubmitted });
+    onSubmitting();
+    mutate(result.payload, { onError: onSubmitFailed });
   }
 
   return (
@@ -181,11 +185,13 @@ function ApprovalForm({
 function UncertainForm({
   threadId,
   interrupt,
-  onSubmitted,
+  onSubmitting,
+  onSubmitFailed,
 }: {
   threadId: string;
   interrupt: UncertainExecutionInterrupt;
-  onSubmitted: () => void;
+  onSubmitting: () => void;
+  onSubmitFailed: () => void;
 }) {
   const [drafts, setDrafts] = useState<Partial<Record<string, UncertainDraft>>>({});
   const { mutate, isPending } = useSubmitReview(threadId, 'uncertain');
@@ -201,7 +207,9 @@ function UncertainForm({
 
   function submit() {
     const result = buildUncertainPayload(interrupt.actions, drafts);
-    if (result.ok) mutate(result.payload, { onSuccess: onSubmitted });
+    if (!result.ok) return;
+    onSubmitting();
+    mutate(result.payload, { onError: onSubmitFailed });
   }
 
   return (
@@ -237,7 +245,12 @@ function UncertainForm({
   );
 }
 
-export function ApprovalReview({ threadId, interrupt, onSubmitted }: ApprovalReviewProps) {
+export function ApprovalReview({
+  threadId,
+  interrupt,
+  onSubmitting,
+  onSubmitFailed,
+}: ApprovalReviewProps) {
   const title =
     interrupt.kind === 'approval_required'
       ? 'Waiting for your approval'
@@ -247,9 +260,19 @@ export function ApprovalReview({ threadId, interrupt, onSubmitted }: ApprovalRev
     <div className="bg-card flex flex-col gap-3 rounded-lg border-2 border-amber-500/60 p-3">
       <h2 className="text-sm font-semibold">{title}</h2>
       {interrupt.kind === 'approval_required' ? (
-        <ApprovalForm threadId={threadId} interrupt={interrupt} onSubmitted={onSubmitted} />
+        <ApprovalForm
+          threadId={threadId}
+          interrupt={interrupt}
+          onSubmitting={onSubmitting}
+          onSubmitFailed={onSubmitFailed}
+        />
       ) : (
-        <UncertainForm threadId={threadId} interrupt={interrupt} onSubmitted={onSubmitted} />
+        <UncertainForm
+          threadId={threadId}
+          interrupt={interrupt}
+          onSubmitting={onSubmitting}
+          onSubmitFailed={onSubmitFailed}
+        />
       )}
     </div>
   );

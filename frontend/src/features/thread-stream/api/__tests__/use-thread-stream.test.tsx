@@ -202,5 +202,21 @@ describe('useThreadStream', () => {
       result.current.markRunStarted();
     });
     expect(result.current.state.runStatus).toBe('running');
+    act(() => {
+      result.current.markRunStartFailed();
+    });
+    expect(result.current.state.runStatus).toBeNull();
+  });
+
+  it('keeps events delivered before the request resolves', () => {
+    const { result } = mount('t1');
+    act(() => {
+      result.current.markRunStarted();
+    });
+    act(() => {
+      latest().emit(1, 'token', { text: 'hi' });
+      latest().emit(2, 'run_completed', { status: 'done' });
+    });
+    expect(result.current.state.runStatus).toBe('idle');
   });
 });

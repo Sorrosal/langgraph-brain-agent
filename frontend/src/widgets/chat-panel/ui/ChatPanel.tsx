@@ -19,7 +19,7 @@ interface ChatSessionProps {
 }
 
 function ChatSession({ detail }: ChatSessionProps) {
-  const { state, markRunStarted } = useThreadStream(detail.id);
+  const { state, markRunStarted, markRunStartFailed } = useThreadStream(detail.id);
   const view = deriveChatView(detail, state);
   const scroller = useRef<HTMLDivElement>(null);
   const showStreaming = view.status === 'running' && state.streamingText !== '';
@@ -60,10 +60,16 @@ function ChatSession({ detail }: ChatSessionProps) {
           <ApprovalReview
             threadId={detail.id}
             interrupt={view.pendingInterrupt}
-            onSubmitted={markRunStarted}
+            onSubmitting={markRunStarted}
+            onSubmitFailed={markRunStartFailed}
           />
         )}
-        <MessageComposer threadId={detail.id} disabled={view.busy} onSent={markRunStarted} />
+        <MessageComposer
+          threadId={detail.id}
+          disabled={view.busy}
+          onSubmitting={markRunStarted}
+          onSubmitFailed={markRunStartFailed}
+        />
       </div>
     </>
   );
