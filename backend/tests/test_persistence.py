@@ -322,7 +322,7 @@ async def test_run_error_semantics_are_recorded_in_postgres(persistence: Persist
     assert record is not None
     assert record.status == "running"
     assert record.last_error is not None
-    assert "db down" in record.last_error
+    assert record.last_error == "ConnectionError"  # no raw exception text
 
 
 async def test_a_run_that_keeps_failing_is_marked_failed_after_max_attempts(

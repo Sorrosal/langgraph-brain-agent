@@ -106,6 +106,9 @@ class SseStream:
         self._disconnect.set()
         await asyncio.wait_for(self._task, 2)
 
+    async def wait_finished(self) -> None:
+        await self._task
+
     @property
     def finished(self) -> bool:
         return self._task.done()

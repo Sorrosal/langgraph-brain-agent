@@ -83,3 +83,20 @@ class IntegrationError(BrainAgentError):
     def __init__(self, message: str, *, outcome_unknown: bool = False) -> None:
         self.outcome_unknown = outcome_unknown
         super().__init__(message)
+
+
+MAX_ERROR_CHARS = 200
+
+
+def safe_error(exc: BaseException) -> str:
+    """Describe ``exc`` for storage or display without leaking its message.
+
+    Only :class:`IntegrationError` messages are kept (they never hold secrets), truncated;
+    every other exception is reduced to its class name.
+    """
+    if not isinstance(exc, IntegrationError):
+        return type(exc).__name__
+    message = str(exc)
+    if len(message) > MAX_ERROR_CHARS:
+        message = message[:MAX_ERROR_CHARS] + "…"
+    return f"{type(exc).__name__}: {message}"

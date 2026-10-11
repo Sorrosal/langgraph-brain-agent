@@ -106,7 +106,7 @@ async def test_failed_execution_is_retried_under_the_same_key() -> None:
     with pytest.raises(ConnectionError):
         await first.run(THREAD, "mail")
     failed = await ledger.get(KEY)
-    assert failed is not None and failed.status == "failed" and "smtp down" in str(failed.error)
+    assert failed is not None and failed.status == "failed" and failed.error == "ConnectionError"
 
     await _runner(mailer, ledger).run(THREAD, "mail")
 

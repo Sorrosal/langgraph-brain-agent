@@ -20,6 +20,7 @@ from brain_agent.errors import (
     LeaseLostError,
     NoPendingApprovalError,
     ThreadBusyError,
+    safe_error,
 )
 from brain_agent.graph.builder import AgentGraph
 from brain_agent.graph.nodes import TOOLS_NODE
@@ -35,6 +36,7 @@ from brain_agent.hitl.models import (
     UncertainExecutionInterrupt,
     UncertainResponse,
 )
+from brain_agent.observability.tracing import observe_run, telemetry
 from brain_agent.persistence.runs import RunLedger
 from brain_agent.runtime.events import EventSink, failure_data, translate
 from brain_agent.tools.memory_tools import DEFAULT_USER_ID
@@ -163,7 +165,9 @@ class AgentRunner:
             await self._abandon_failed_work(thread_id, config, pending, record.last_error)
         # A new user message starts a new run, so the step budget starts again.
         update: AgentState = {"messages": [HumanMessage(content=message)], "step_count": 0}
-        token = await self._execute(thread_id, update, user_id, reset_attempts=True, sink=sink)
+        token = await self._execute(
+            thread_id, update, user_id, operation="run", reset_attempts=True, sink=sink
+        )
         return await self._finish(thread_id, token, sink)
 
     async def _abandon_failed_work(
@@ -201,7 +205,9 @@ class AgentRunner:
             # A row still marked running (crash after the pause) is closed as interrupted.
             return await self._finish(thread_id, await self._reclaim_stale_row(thread_id), sink)
         if snapshot.next:
-            token = await self._execute(thread_id, None, user_id, reset_attempts=False, sink=sink)
+            token = await self._execute(
+                thread_id, None, user_id, operation="resume", reset_attempts=False, sink=sink
+            )
         else:
             token = await self._reclaim_stale_row(thread_id)
         return await self._finish(thread_id, token, sink)
@@ -230,7 +236,9 @@ class AgentRunner:
             response.ensure_covers(pending.actions)
             return Command(resume=response.model_dump())
 
-        return await self._resume_paused(thread_id, ApprovalInterrupt, command, user_id, sink)
+        return await self._resume_paused(
+            thread_id, ApprovalInterrupt, command, user_id, sink, "approve"
+        )
 
     async def resolve_uncertain(
         self,
@@ -255,6 +263,7 @@ class AgentRunner:
             lambda pending: _uncertain_command(pending, decisions),
             user_id,
             sink,
+            "resolve_uncertain",
         )
 
     async def validate_approval(self, thread_id: str, response: ApprovalResponse) -> None:
@@ -285,6 +294,7 @@ class AgentRunner:
         build_command: Callable[[Pending], Command[Any]],
         user_id: str,
         sink: EventSink | None,
+        operation: str,
     ) -> RunResult:
         async def prepare() -> Command[Any]:
             pending = _pending_interrupt(await self.get_state(thread_id))
@@ -292,7 +302,9 @@ class AgentRunner:
                 raise NoPendingApprovalError(thread_id)
             return build_command(pending)
 
-        token = await self._execute(thread_id, prepare, user_id, reset_attempts=True, sink=sink)
+        token = await self._execute(
+            thread_id, prepare, user_id, operation=operation, reset_attempts=True, sink=sink
+        )
         return await self._finish(thread_id, token, sink)
 
     async def get_pending_interrupt(self, thread_id: str) -> PendingInterrupt | None:
@@ -350,6 +362,7 @@ class AgentRunner:
         graph_input: AgentState | Command[Any] | Callable[[], Awaitable[Command[Any]]] | None,
         user_id: str,
         *,
+        operation: str,
         reset_attempts: bool,
         sink: EventSink | None = None,
     ) -> int | None:
@@ -357,8 +370,32 @@ class AgentRunner:
 
         A callable ``graph_input`` is awaited once the thread is claimed (in-process guard and
         lease), so it can validate against state nobody else is changing. If it raises, the
-        claim is released and the error propagates.
+        claim is released and the error propagates. Any failure, including one before the graph
+        starts (rejected decision, setup error), is published as ``run_failed`` so event streams
+        always see a terminal event. A busy thread is the exception: the run that owns it emits
+        its own terminal event, and a rejected caller must not fail it in the eyes of watchers.
         """
+        bound = structlog.contextvars.bound_contextvars(thread_id=thread_id, owner=self._owner_id)
+        with bound, observe_run(thread_id, operation) as observation:
+            try:
+                return await self._claim_and_drive(
+                    thread_id, graph_input, user_id, reset_attempts, sink
+                )
+            except Exception as exc:
+                if isinstance(exc, LeaseLostError):
+                    observation.outcome = "lease_lost"
+                if not isinstance(exc, ThreadBusyError):
+                    _emit(sink, "run_failed", failure_data(exc))
+                raise
+
+    async def _claim_and_drive(
+        self,
+        thread_id: str,
+        graph_input: AgentState | Command[Any] | Callable[[], Awaitable[Command[Any]]] | None,
+        user_id: str,
+        reset_attempts: bool,
+        sink: EventSink | None,
+    ) -> int | None:
         config = _thread_config(thread_id, user_id)
         runs = self._runs
         if thread_id in self._active:
@@ -379,11 +416,7 @@ class AgentRunner:
                         await self._release(runs, thread_id, token, prior.status if prior else None)
                     raise
             if runs is None or token is None:
-                try:
-                    await self._drive(graph_input, config, sink)
-                except Exception as exc:
-                    _emit(sink, "run_failed", failure_data(exc))
-                    raise
+                await self._drive(graph_input, config, sink)
                 return None
             return await self._execute_leased(runs, thread_id, token, graph_input, config, sink)
         finally:
@@ -416,12 +449,10 @@ class AgentRunner:
             await graph_task
         except asyncio.CancelledError:
             if lost.is_set():
-                _emit(sink, "run_failed", failure_data(LeaseLostError(thread_id)))
                 raise LeaseLostError(thread_id) from None
             raise
         except Exception as exc:
             await self._record_failure(runs, thread_id, token, exc)
-            _emit(sink, "run_failed", failure_data(exc))
             raise
         finally:
             heartbeat.cancel()
@@ -477,7 +508,7 @@ class AgentRunner:
     async def _record_failure(
         self, runs: RunLedger, thread_id: str, token: int, exc: Exception
     ) -> None:
-        error = f"{type(exc).__name__}: {exc}"
+        error = safe_error(exc)  # the full exception is in the log, never in the registry
         try:
             if is_transient_error(exc):
                 await runs.record_error(thread_id, self._owner_id, token, error)
@@ -498,6 +529,7 @@ class AgentRunner:
             if not finished:
                 _emit(sink, "run_failed", failure_data(LeaseLostError(thread_id)))
                 raise LeaseLostError(thread_id)
+        telemetry().runs_completed.add(1, {"status": result.status})
         _emit(sink, "run_completed", {"status": result.status})
         return result
 
