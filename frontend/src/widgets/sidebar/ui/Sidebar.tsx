@@ -1,4 +1,15 @@
-import { ChevronLeft, ChevronRight, LogOut, MessageSquare, Settings, Zap } from 'lucide-react';
+import {
+  Brain,
+  ChevronLeft,
+  ChevronRight,
+  Database,
+  LogOut,
+  MessageSquare,
+  Microscope,
+  Settings,
+  ShieldCheck,
+  Zap,
+} from 'lucide-react';
 import { NavLink } from 'react-router-dom';
 import { useLogout } from '@/features/auth';
 import { env } from '@/shared/config/env';
@@ -17,6 +28,10 @@ interface NavItem {
 
 const navItems: NavItem[] = [
   { to: '/app/chat', icon: MessageSquare, label: 'Chat' },
+  { to: '/app/approvals', icon: ShieldCheck, label: 'Approvals' },
+  { to: '/app/inspector', icon: Microscope, label: 'Inspector' },
+  { to: '/app/brain', icon: Brain, label: 'Brain' },
+  { to: '/app/data', icon: Database, label: 'Data' },
   { to: '/app/settings', icon: Settings, label: 'Settings' },
 ];
 

@@ -19,6 +19,10 @@ function PageLoader() {
 const LoginPage = lazy(() => import('@/pages/auth/LoginPage'));
 const RegisterPage = lazy(() => import('@/pages/auth/RegisterPage'));
 const ChatPage = lazy(() => import('@/pages/chat/ChatPage'));
+const ApprovalsPage = lazy(() => import('@/pages/approvals/ApprovalsPage'));
+const InspectorPage = lazy(() => import('@/pages/inspector/InspectorPage'));
+const BrainPage = lazy(() => import('@/pages/brain/BrainPage'));
+const DataPage = lazy(() => import('@/pages/data/DataPage'));
 const SettingsPage = lazy(() => import('@/pages/settings/SettingsPage'));
 const NotFoundPage = lazy(() => import('@/pages/not-found/NotFoundPage'));
 
@@ -50,6 +54,10 @@ export const router = createBrowserRouter([
               { path: '/app', element: <Navigate to="/app/chat" replace /> },
               { path: '/app/chat', element: page(<ChatPage />) },
               { path: '/app/chat/:threadId', element: page(<ChatPage />) },
+              { path: '/app/approvals', element: page(<ApprovalsPage />) },
+              { path: '/app/inspector/:threadId?', element: page(<InspectorPage />) },
+              { path: '/app/brain', element: page(<BrainPage />) },
+              { path: '/app/data', element: page(<DataPage />) },
               { path: '/app/settings', element: page(<SettingsPage />) },
             ],
           },
