@@ -192,3 +192,33 @@ async def test_task_idempotent_create_list_complete_delete(
     assert await tasks.delete_task(other.id) is False
     with pytest.raises(NotFoundError):
         await tasks.complete_task(other.id)
+
+
+@pytest.mark.parametrize(
+    ("amount", "stored"),
+    [
+        ("0.005", "0.01"),
+        ("0.015", "0.02"),
+        ("0.025", "0.03"),  # half-even would give 0.02
+        ("2.675", "2.68"),
+        ("0.004", "0.00"),
+        ("-0.005", "-0.01"),
+    ],
+)
+async def test_amounts_round_half_away_from_zero_in_both_adapters(
+    repos: tuple[CrmRepository, TaskRepository], amount: str, stored: str
+) -> None:
+    crm, _ = repos
+    ada = await _ada(crm)
+
+    deal = await crm.create_deal(
+        contact_id=ada,
+        title="t",
+        amount=Decimal(amount),
+        currency="USD",
+        stage="lead",
+        idempotency_key="d1",
+    )
+    updated = await crm.update_deal(deal.id, amount=Decimal(amount))
+
+    assert (deal.amount, updated.amount) == (Decimal(stored), Decimal(stored))

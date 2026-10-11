@@ -43,6 +43,16 @@ hard_rules:
     risk: high
     reason: Bulk emails need a human check before anything is sent.
 
+  - id: bulk-email-string-needs-approval
+    description: Same as the bulk rule, for recipients given as one comma/semicolon-separated string.
+    when:
+      tool: send_email
+      args:
+        to: { matches: '([,;][^,;]*){5}' }
+    action: require_approval
+    risk: high
+    reason: Bulk emails need a human check before anything is sent.
+
   - id: no-crm-deletion
     description: CRM records are never deleted by the agent.
     when:

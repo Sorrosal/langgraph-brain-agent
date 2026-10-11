@@ -1,7 +1,7 @@
 """CRM tools over a :class:`CrmRepository`."""
 
 from decimal import Decimal
-from typing import Self
+from typing import Annotated, Self
 
 from langchain_core.tools import BaseTool
 from pydantic import BaseModel, Field, model_validator
@@ -10,6 +10,8 @@ from brain_agent.integrations.crm import CrmRepository, DealStage, RecordKind
 from brain_agent.tools.support import idempotency_key_or_new, make_tool, to_json
 
 SEARCH_LIMIT_MAX = 50
+AMOUNT_MAX = Decimal("999999999999.99")  # what numeric(14, 2) can hold
+DealAmount = Annotated[Decimal, Field(ge=0, le=AMOUNT_MAX, decimal_places=2)]
 
 
 class SearchContactsArgs(BaseModel):
@@ -37,14 +39,14 @@ class ListDealsArgs(BaseModel):
 class CreateDealArgs(BaseModel):
     contact_id: str = Field(description="Id of the contact the deal belongs to.")
     title: str = Field(min_length=1, description="Short deal title.")
-    amount: Decimal = Field(ge=0, description="Deal value in the given currency.")
+    amount: DealAmount = Field(description="Deal value in the given currency.")
     currency: str = Field(default="USD", min_length=3, max_length=3, description="ISO 4217 code.")
     stage: DealStage = Field(default="lead", description="Pipeline stage.")
 
 
 class UpdateDealArgs(BaseModel):
     deal_id: str = Field(description="Id of the deal, as returned by crm_list_deals.")
-    amount: Decimal | None = Field(default=None, ge=0, description="New deal value.")
+    amount: DealAmount | None = Field(default=None, description="New deal value.")
     stage: DealStage | None = Field(default=None, description="New pipeline stage.")
     title: str | None = Field(default=None, min_length=1, description="New title.")
 

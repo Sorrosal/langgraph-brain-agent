@@ -1,13 +1,22 @@
 """In-memory adapters with the same semantics as the PostgreSQL ones (tests and demo mode)."""
 
 from datetime import UTC, date, datetime
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from uuid import uuid4
 
 from brain_agent.errors import NotFoundError
 from brain_agent.integrations.crm import Contact, Deal, DealStage, RecordKind
+from brain_agent.integrations.email import (
+    MESSAGE_ID_DOMAIN,
+    EmailMessage,
+    Folder,
+    OutgoingEmail,
+    SendResult,
+    message_id_for,
+)
 from brain_agent.integrations.tasks import Priority, Task, TaskStatus
 
+# numeric(14, 2) rounds half away from zero, which is what ROUND_HALF_UP does in Python.
 CENT = Decimal("0.01")
 
 
@@ -88,7 +97,7 @@ class InMemoryCrmRepository:
             id=_new_id(),
             contact_id=contact_id,
             title=title,
-            amount=amount.quantize(CENT),
+            amount=amount.quantize(CENT, rounding=ROUND_HALF_UP),
             currency=currency,
             stage=stage,
             updated_at=_now(),
@@ -109,7 +118,7 @@ class InMemoryCrmRepository:
             raise NotFoundError("deal", deal_id)
         changes: dict[str, object] = {"updated_at": _now()}
         if amount is not None:
-            changes["amount"] = amount.quantize(CENT)
+            changes["amount"] = amount.quantize(CENT, rounding=ROUND_HALF_UP)
         if stage is not None:
             changes["stage"] = stage
         if title is not None:
@@ -177,3 +186,87 @@ class InMemoryTaskRepository:
 
     async def delete_task(self, task_id: str) -> bool:
         return self._tasks.pop(task_id, None) is not None
+
+
+class InMemoryEmailGateway:
+    """Keeps mail in memory: ``send`` files a copy under "sent"; inbox mail is seeded with
+    :meth:`add_inbox_message`. Repeating an idempotency key never creates a second message."""
+
+    provider = "outbox"
+    retry_safe = True
+
+    def __init__(self, from_address: str = "agent@acme.com") -> None:
+        self._from = from_address
+        self._messages: list[EmailMessage] = []  # insertion order == creation order
+        self._keys: dict[str, str] = {}  # idempotency key -> message id
+
+    async def send(self, email: OutgoingEmail, *, idempotency_key: str) -> SendResult:
+        if (existing := self._keys.get(idempotency_key)) is not None:
+            message = await self.get(existing)
+            return SendResult(
+                id=message.id,
+                message_id_header=message.message_id_header,
+                provider=self.provider,
+                deduplicated=True,
+            )
+        message = EmailMessage(
+            id=_new_id(),
+            message_id_header=message_id_for(idempotency_key),
+            from_=self._from,
+            to=list(email.to),
+            cc=list(email.cc),
+            subject=email.subject,
+            body_text=email.body_text,
+            sent_at=_now(),
+            folder="sent",
+        )
+        self._messages.append(message)
+        self._keys[idempotency_key] = message.id
+        return SendResult(
+            id=message.id,
+            message_id_header=message.message_id_header,
+            provider=self.provider,
+            deduplicated=False,
+        )
+
+    async def add_inbox_message(
+        self,
+        *,
+        from_: str,
+        to: list[str],
+        subject: str,
+        body_text: str,
+        cc: list[str] | None = None,
+    ) -> EmailMessage:
+        """Deliver a message into the inbox (demos and tests)."""
+        message = EmailMessage(
+            id=_new_id(),
+            message_id_header=f"<{_new_id()}@{MESSAGE_ID_DOMAIN}>",
+            from_=from_,
+            to=to,
+            cc=cc or [],
+            subject=subject,
+            body_text=body_text,
+            received_at=_now(),
+            folder="inbox",
+        )
+        self._messages.append(message)
+        return message
+
+    async def search(
+        self, query: str, *, folder: Folder = "inbox", limit: int = 10
+    ) -> list[EmailMessage]:
+        needle = query.casefold()
+        found = [
+            m
+            for m in reversed(self._messages)
+            if m.folder == folder
+            and needle in "\n".join([m.from_, *m.to, *m.cc, m.subject, m.body_text]).casefold()
+        ]
+        return found[:limit]
+
+    async def get(self, message_id: str) -> EmailMessage:
+        for message in self._messages:
+            if message.id == message_id:
+                return message
+        raise NotFoundError("email", message_id)

@@ -42,6 +42,20 @@ class Settings(BaseSettings):
     memory_recall_limit: int = 5
     memory_extraction_enabled: bool = True
     """Extract durable memories from each finished turn (one extra model call per turn)."""
+    email_provider: Literal["outbox", "smtp"] = "outbox"
+    """``outbox`` stores mail in PostgreSQL (nothing leaves the system); ``smtp`` really sends."""
+    email_from: str = "agent@acme.com"
+    smtp_host: str | None = None
+    smtp_port: int = 465
+    smtp_username: str | None = None
+    smtp_password: SecretStr | None = None
+    smtp_security: Literal["ssl", "starttls", "none"] = "ssl"
+    """``none`` (plain text) is only accepted for localhost."""
+    imap_host: str | None = None
+    imap_port: int = 993
+    imap_username: str | None = None
+    imap_password: SecretStr | None = None
+    email_timeout_seconds: float = 20
     rules_dir: Path = REPO_ROOT / "rules"
     """Directory of ``*.yaml`` rule files (see ``rules/README.md``)."""
 

@@ -259,3 +259,30 @@ async def test_small_deal_update_and_task_deletion() -> None:
 
     assert done.status == "completed"
     assert await tasks.list_tasks(None, None, 10) == []
+
+
+@pytest.mark.parametrize(
+    ("amount", "message"),
+    [
+        ("1000000000000", "less than or equal"),
+        ("1.005", "decimal places"),
+        ("-1", "greater than or equal"),
+    ],
+)
+async def test_deal_amounts_are_bounded_with_a_clear_message(amount: str, message: str) -> None:
+    tools = _by_name(build_crm_tools(InMemoryCrmRepository()))
+
+    for tool, args in (
+        ("crm_create_deal", {"contact_id": "c", "title": "t", "amount": amount}),
+        ("crm_update_deal", {"deal_id": "d", "amount": amount}),
+    ):
+        result = await tools[tool].ainvoke(
+            {"type": "tool_call", "name": tool, "id": "1", "args": args}
+        )
+        assert result.status == "error" and "amount" in result.text and message in result.text, tool
+
+    contact = await _call(tools, "crm_create_contact", name="Ada", email="a@x.io")
+    biggest = await _call(
+        tools, "crm_create_deal", contact_id=contact["id"], title="t", amount="999999999999.99"
+    )
+    assert biggest["amount"] == "999999999999.99"

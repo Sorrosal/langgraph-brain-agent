@@ -67,3 +67,7 @@ class NotFoundError(BrainAgentError):
         self.kind = kind
         self.record_id = record_id
         super().__init__(f"{kind} {record_id!r} not found")
+
+
+class IntegrationError(BrainAgentError):
+    """Raised when an external provider (SMTP, IMAP, ...) fails. Messages never hold secrets."""
