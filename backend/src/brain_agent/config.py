@@ -1,11 +1,19 @@
 """Application settings loaded from environment variables (and an optional ``.env`` file)."""
 
+import secrets
 from functools import lru_cache
 from pathlib import Path
-from typing import Literal
+from typing import Literal, Self
 
-from pydantic import SecretStr
+import structlog
+from pydantic import SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from brain_agent.errors import ConfigurationError
+
+logger = structlog.get_logger(__name__)
+
+MIN_JWT_SECRET_LENGTH = 32
 
 # config.py -> brain_agent -> src -> backend
 BACKEND_DIR = Path(__file__).resolve().parents[2]
@@ -58,6 +66,32 @@ class Settings(BaseSettings):
     email_timeout_seconds: float = 20
     rules_dir: Path = REPO_ROOT / "rules"
     """Directory of ``*.yaml`` rule files (see ``rules/README.md``)."""
+    jwt_secret: SecretStr | None = None
+    """HS256 signing key. Required (32+ characters) in production; development generates one."""
+    jwt_ttl_minutes: int = 60
+    allow_registration: bool | None = None
+    """Open self-registration; unset means enabled in development only."""
+    cors_origins: list[str] = ["http://localhost:5173"]
+
+    @property
+    def registration_enabled(self) -> bool:
+        if self.allow_registration is None:
+            return self.environment == "development"
+        return self.allow_registration
+
+    @model_validator(mode="after")
+    def _resolve_jwt_secret(self) -> Self:
+        secret = self.jwt_secret.get_secret_value() if self.jwt_secret else ""
+        if self.environment == "production":
+            if len(secret) < MIN_JWT_SECRET_LENGTH:
+                raise ConfigurationError(
+                    f"JWT_SECRET must be set to at least {MIN_JWT_SECRET_LENGTH} characters "
+                    "in production."
+                )
+        elif not secret:
+            logger.warning("jwt_secret_generated", detail="tokens are invalid after a restart")
+            self.jwt_secret = SecretStr(secrets.token_urlsafe(48))
+        return self
 
 
 @lru_cache(maxsize=1)

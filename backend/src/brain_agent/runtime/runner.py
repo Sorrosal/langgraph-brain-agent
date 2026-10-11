@@ -36,6 +36,7 @@ from brain_agent.hitl.models import (
     UncertainResponse,
 )
 from brain_agent.persistence.runs import RunLedger
+from brain_agent.tools.memory_tools import DEFAULT_USER_ID
 
 logger = structlog.get_logger(__name__)
 
@@ -136,14 +137,16 @@ class AgentRunner:
         """Identity under which this runner holds run leases."""
         return self._owner_id
 
-    async def run(self, thread_id: str, message: str) -> RunResult:
+    async def run(
+        self, thread_id: str, message: str, *, user_id: str = DEFAULT_USER_ID
+    ) -> RunResult:
         """Send a user message on ``thread_id`` and run the agent until it stops.
 
         Raises:
             ThreadBusyError: if the thread has unfinished work that is not a ``failed`` run
                 (or no registry is configured); :meth:`resume` it first.
         """
-        config = _thread_config(thread_id)
+        config = _thread_config(thread_id, user_id)
         pending = await self._graph.aget_state(config)
         if _pending_interrupt(pending) is not None:
             raise ThreadBusyError(thread_id, tuple(pending.next), approval_pending=True)
@@ -154,7 +157,7 @@ class AgentRunner:
             await self._abandon_failed_work(thread_id, config, pending, record.last_error)
         # A new user message starts a new run, so the step budget starts again.
         update: AgentState = {"messages": [HumanMessage(content=message)], "step_count": 0}
-        token = await self._execute(thread_id, update, reset_attempts=True)
+        token = await self._execute(thread_id, update, user_id, reset_attempts=True)
         return await self._finish(thread_id, token)
 
     async def _abandon_failed_work(
@@ -181,7 +184,7 @@ class AgentRunner:
         logger.warning("failed_run_abandoned", thread_id=thread_id, closed_tool_calls=len(closing))
         await self._graph.aupdate_state(config, {"messages": closing}, as_node=TOOLS_NODE)
 
-    async def resume(self, thread_id: str) -> RunResult:
+    async def resume(self, thread_id: str, *, user_id: str = DEFAULT_USER_ID) -> RunResult:
         """Continue an unfinished run from its last checkpoint; no-op if nothing is pending."""
         config = _thread_config(thread_id)
         snapshot = await self._graph.aget_state(config)
@@ -190,12 +193,14 @@ class AgentRunner:
             # A row still marked running (crash after the pause) is closed as interrupted.
             return await self._finish(thread_id, await self._reclaim_stale_row(thread_id))
         if snapshot.next:
-            token = await self._execute(thread_id, None, reset_attempts=False)
+            token = await self._execute(thread_id, None, user_id, reset_attempts=False)
         else:
             token = await self._reclaim_stale_row(thread_id)
         return await self._finish(thread_id, token)
 
-    async def approve(self, thread_id: str, response: ApprovalResponse) -> RunResult:
+    async def approve(
+        self, thread_id: str, response: ApprovalResponse, *, user_id: str = DEFAULT_USER_ID
+    ) -> RunResult:
         """Apply the human decisions to the paused approval and continue the run.
 
         The lease is taken before the pending approval is read, so concurrent calls cannot
@@ -212,10 +217,14 @@ class AgentRunner:
             response.ensure_covers(pending.actions)
             return Command(resume=response.model_dump())
 
-        return await self._resume_paused(thread_id, ApprovalInterrupt, command)
+        return await self._resume_paused(thread_id, ApprovalInterrupt, command, user_id)
 
     async def resolve_uncertain(
-        self, thread_id: str, decisions: Mapping[str, ConfirmDone | Retry | Skip]
+        self,
+        thread_id: str,
+        decisions: Mapping[str, ConfirmDone | Retry | Skip],
+        *,
+        user_id: str = DEFAULT_USER_ID,
     ) -> RunResult:
         """Answer the paused uncertain tool executions, one decision per action id.
 
@@ -230,13 +239,36 @@ class AgentRunner:
             thread_id,
             UncertainExecutionInterrupt,
             lambda pending: _uncertain_command(pending, decisions),
+            user_id,
         )
+
+    async def validate_approval(self, thread_id: str, response: ApprovalResponse) -> None:
+        """Check ``response`` against the pending approval without resuming anything.
+
+        Raises:
+            NoPendingApprovalError: the thread is not paused on an approval.
+            InvalidApprovalError: the decisions do not match the pending actions.
+        """
+        pending = await self.get_pending_interrupt(thread_id)
+        if not isinstance(pending, ApprovalInterrupt):
+            raise NoPendingApprovalError(thread_id)
+        response.ensure_covers(pending.actions)
+
+    async def validate_uncertain(
+        self, thread_id: str, decisions: Mapping[str, ConfirmDone | Retry | Skip]
+    ) -> None:
+        """Like :meth:`validate_approval`, for a pending uncertain execution."""
+        pending = await self.get_pending_interrupt(thread_id)
+        if not isinstance(pending, UncertainExecutionInterrupt):
+            raise NoPendingApprovalError(thread_id)
+        _uncertain_command(pending, decisions)
 
     async def _resume_paused(
         self,
         thread_id: str,
         kind: type[Pending],
         build_command: Callable[[Pending], Command[Any]],
+        user_id: str,
     ) -> RunResult:
         async def prepare() -> Command[Any]:
             pending = _pending_interrupt(await self.get_state(thread_id))
@@ -244,8 +276,12 @@ class AgentRunner:
                 raise NoPendingApprovalError(thread_id)
             return build_command(pending)
 
-        token = await self._execute(thread_id, prepare, reset_attempts=True)
+        token = await self._execute(thread_id, prepare, user_id, reset_attempts=True)
         return await self._finish(thread_id, token)
+
+    async def get_pending_interrupt(self, thread_id: str) -> PendingInterrupt | None:
+        """Return whatever the thread is paused on (approval or uncertain execution), if any."""
+        return _pending_interrupt(await self.get_state(thread_id))
 
     async def get_pending_approval(self, thread_id: str) -> ApprovalInterrupt | None:
         """Return the approval request the thread is paused on, if any."""
@@ -271,6 +307,7 @@ class AgentRunner:
         self,
         thread_id: str,
         graph_input: AgentState | Command[Any] | Callable[[], Awaitable[Command[Any]]] | None,
+        user_id: str,
         *,
         reset_attempts: bool,
     ) -> int | None:
@@ -280,7 +317,7 @@ class AgentRunner:
         lease), so it can validate against state nobody else is changing. If it raises, the
         claim is released and the error propagates.
         """
-        config = _thread_config(thread_id)
+        config = _thread_config(thread_id, user_id)
         runs = self._runs
         if thread_id in self._active:
             raise ThreadBusyError(thread_id)
@@ -302,7 +339,7 @@ class AgentRunner:
             if runs is None or token is None:
                 await self._graph.ainvoke(graph_input, config, durability="sync")
                 return None
-            return await self._execute_leased(runs, thread_id, token, graph_input)
+            return await self._execute_leased(runs, thread_id, token, graph_input, config)
         finally:
             self._active.discard(thread_id)
 
@@ -321,8 +358,8 @@ class AgentRunner:
         thread_id: str,
         token: int,
         graph_input: AgentState | Command[Any] | None,
+        config: RunnableConfig,
     ) -> int:
-        config = _thread_config(thread_id)
         lost = asyncio.Event()
         graph_task = asyncio.ensure_future(
             self._graph.ainvoke(graph_input, config, durability="sync")
@@ -416,10 +453,10 @@ def _uncertain_command(
     return Command(resume=response.model_dump())
 
 
-def _thread_config(thread_id: str) -> RunnableConfig:
+def _thread_config(thread_id: str, user_id: str = DEFAULT_USER_ID) -> RunnableConfig:
     if not thread_id.strip():
         raise ValueError("thread_id must be a non-empty string")
-    return {"configurable": {"thread_id": thread_id}}
+    return {"configurable": {"thread_id": thread_id, "user_id": user_id}}
 
 
 def _pending_interrupt(snapshot: StateSnapshot) -> PendingInterrupt | None:

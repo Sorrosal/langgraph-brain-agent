@@ -5,6 +5,7 @@ import os
 
 import pytest
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, ToolMessage
+from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import BaseTool, tool
 from langgraph.checkpoint.memory import InMemorySaver
 
@@ -12,6 +13,7 @@ from brain_agent.errors import ConfigurationError, LeaseLostError, ThreadBusyErr
 from brain_agent.graph.builder import build_graph
 from brain_agent.graph.nodes import TOOLS_NODE
 from brain_agent.runtime.runner import AgentRunner, RunResult
+from brain_agent.tools.memory_tools import user_id_of
 from tests.fakes import FakeRunLedger, ScriptedChatModel, tool_call
 
 
@@ -477,3 +479,26 @@ def test_runner_validates_lease_and_heartbeat(lease: float, interval: float | No
 
     with pytest.raises(ValueError, match=r"lease_seconds|heartbeat_interval"):
         AgentRunner(graph, lease_seconds=lease, heartbeat_interval=interval)
+
+
+async def test_user_id_reaches_tools_and_defaults_to_default() -> None:
+    @tool
+    def whoami(config: RunnableConfig) -> str:
+        """Report the user the run acts for."""
+        return user_id_of(config)
+
+    async def answers(user_id: str | None) -> str:
+        script = [tool_call("whoami", {}, "c1"), AIMessage(content="ok")]
+        graph = build_graph(
+            ScriptedChatModel(script=script), [whoami], checkpointer=InMemorySaver()
+        )
+        runner = AgentRunner(graph)
+        if user_id is None:
+            await runner.run("t", "who?")
+        else:
+            await runner.run("t", "who?", user_id=user_id)
+        messages = (await runner.get_state("t")).values["messages"]
+        return str(next(m for m in messages if isinstance(m, ToolMessage)).content)
+
+    assert await answers("user-7") == "user-7"
+    assert await answers(None) == "default"
