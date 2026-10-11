@@ -51,9 +51,10 @@ the app origin in its CORS settings (`cors_origins`).
 ```
 src/
 ├── app/        providers, router (AuthGuard, layouts), api bridge, global styles
-├── pages/      auth (login, register), chat, settings, not-found   (default exports, lazy)
+├── pages/      auth, chat, approvals, inspector, brain, data, settings, not-found   (default exports, lazy)
 ├── widgets/    thread-list, chat-panel, header, sidebar, theme-toggle
-├── features/   auth, send-message, thread-stream, review-approval, notifications
+├── features/   auth, send-message, thread-stream, review-approval, notifications,
+│               manage-memory, edit-rules
 ├── entities/   user, thread, message, approval
 └── shared/     api (axios, ApiError, contracts), config, hooks, lib, ui (shadcn)
 ```
