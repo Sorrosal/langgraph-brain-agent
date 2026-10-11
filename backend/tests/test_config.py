@@ -44,6 +44,7 @@ def test_reads_values_from_environment(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("DATABASE_URL", "postgresql://u:p@db:5432/other")
     monkeypatch.setenv("LOG_LEVEL", "DEBUG")
     monkeypatch.setenv("ENVIRONMENT", "production")
+    monkeypatch.setenv("JWT_SECRET", "j" * 32)
 
     settings = Settings(_env_file=None)
 

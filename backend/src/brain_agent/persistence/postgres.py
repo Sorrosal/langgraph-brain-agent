@@ -20,7 +20,9 @@ from brain_agent.integrations.postgres import (
 )
 from brain_agent.llm import EMBEDDING_DIMS
 from brain_agent.persistence.runs import RunRegistry
+from brain_agent.persistence.threads import PostgresThreadRepository
 from brain_agent.persistence.tool_ledger import ToolExecutionLedger
+from brain_agent.persistence.users import PostgresUserRepository
 
 # Serialises schema setup across processes/replicas starting at the same time.
 _SETUP_LOCK_KEY = 7_424_000
@@ -34,8 +36,8 @@ async def _try_lock(conn: AsyncConnection[DictRow]) -> bool:
 
 @dataclass(frozen=True, slots=True)
 class Persistence:
-    """Everything that survives a process: checkpoints, store, run registry, tool ledger and the
-    CRM and task repositories."""
+    """Everything that survives a process: checkpoints, store, run registry, tool ledger, the
+    CRM and task repositories, and the API's users and threads."""
 
     checkpointer: AsyncPostgresSaver
     store: AsyncPostgresStore
@@ -43,6 +45,8 @@ class Persistence:
     tool_ledger: ToolExecutionLedger
     crm: PostgresCrmRepository
     tasks: PostgresTaskRepository
+    users: PostgresUserRepository
+    threads: PostgresThreadRepository
     pool: AsyncConnectionPool[AsyncConnection[DictRow]]
 
 
@@ -81,6 +85,8 @@ async def open_persistence(
         store = AsyncPostgresStore(pool, index=index)
         runs = RunRegistry(pool)
         tool_ledger = ToolExecutionLedger(pool)
+        users = PostgresUserRepository(pool)
+        threads = PostgresThreadRepository(pool)
         # Session-level lock on a dedicated connection (not the pool, which setup also needs).
         async with await AsyncConnection.connect(
             database_url, autocommit=True, row_factory=dict_row
@@ -95,6 +101,8 @@ async def open_persistence(
                 await runs.setup()
                 await tool_ledger.setup()
                 await setup_integrations(pool)
+                await users.setup()
+                await threads.setup()
             finally:
                 await lock_conn.execute("SELECT pg_advisory_unlock(%s)", (_SETUP_LOCK_KEY,))
         yield Persistence(
@@ -104,5 +112,7 @@ async def open_persistence(
             tool_ledger=tool_ledger,
             crm=PostgresCrmRepository(pool),
             tasks=PostgresTaskRepository(pool),
+            users=users,
+            threads=threads,
             pool=pool,
         )

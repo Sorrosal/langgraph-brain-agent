@@ -1,11 +1,19 @@
 """Application settings loaded from environment variables (and an optional ``.env`` file)."""
 
+import secrets
 from functools import lru_cache
 from pathlib import Path
-from typing import Literal
+from typing import Literal, Self
 
-from pydantic import SecretStr
+import structlog
+from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from brain_agent.errors import ConfigurationError
+
+logger = structlog.get_logger(__name__)
+
+MIN_JWT_SECRET_LENGTH = 32
 
 # config.py -> brain_agent -> src -> backend
 BACKEND_DIR = Path(__file__).resolve().parents[2]
@@ -58,6 +66,44 @@ class Settings(BaseSettings):
     email_timeout_seconds: float = 20
     rules_dir: Path = REPO_ROOT / "rules"
     """Directory of ``*.yaml`` rule files (see ``rules/README.md``)."""
+    jwt_secret: SecretStr | None = None
+    """HS256 signing key. Required (32+ characters) in production; development generates one."""
+    jwt_ttl_minutes: int = Field(default=60, ge=5, le=1440)
+    auth_hash_concurrency: int = Field(default=4, ge=1)
+    """Password hashes/verifications (argon2 is CPU- and memory-hungry) running at once."""
+    rate_limit_login_per_minute: int = Field(default=10, ge=1)
+    """Per client IP and email."""
+    rate_limit_register_per_hour: int = Field(default=5, ge=1)
+    """Per client IP."""
+    rate_limit_messages_per_minute: int = Field(default=30, ge=1)
+    """Per user."""
+    rate_limit_rules_writes_per_minute: int = Field(default=10, ge=1)
+    """Per user. All limits are in-process: with several replicas each one counts alone."""
+    sse_heartbeat_seconds: float = Field(default=15, gt=0)
+    """Idle time after which an event stream sends a keep-alive comment."""
+    allow_registration: bool | None = None
+    """Open self-registration; unset means enabled in development only (never in production)."""
+    cors_origins: list[str] = ["http://localhost:5173"]
+
+    @property
+    def registration_enabled(self) -> bool:
+        if self.allow_registration is None:
+            return self.environment == "development"
+        return self.allow_registration
+
+    @model_validator(mode="after")
+    def _resolve_jwt_secret(self) -> Self:
+        secret = self.jwt_secret.get_secret_value() if self.jwt_secret else ""
+        if self.environment == "production":
+            if len(secret) < MIN_JWT_SECRET_LENGTH:
+                raise ConfigurationError(
+                    f"JWT_SECRET must be set to at least {MIN_JWT_SECRET_LENGTH} characters "
+                    "in production."
+                )
+        elif not secret:
+            logger.warning("jwt_secret_generated", detail="tokens are invalid after a restart")
+            self.jwt_secret = SecretStr(secrets.token_urlsafe(48))
+        return self
 
 
 @lru_cache(maxsize=1)

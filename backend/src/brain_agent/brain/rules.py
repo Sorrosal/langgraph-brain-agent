@@ -6,7 +6,9 @@ system prompt. See ``rules/README.md`` for the file format.
 
 import hashlib
 import json
+import os
 import re
+import uuid
 from collections.abc import Mapping
 from dataclasses import dataclass
 from decimal import Decimal
@@ -217,9 +219,9 @@ class RuleMatch:
     reason: str
 
 
-def _parse_file(path: Path) -> _RuleFile:
+def _parse_file(path: Path, text: str | None = None) -> _RuleFile:
     try:
-        raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        raw = yaml.safe_load(path.read_text(encoding="utf-8") if text is None else text) or {}
     except (OSError, yaml.YAMLError) as exc:
         raise RulesError(f"{path.name}: cannot read rules: {exc}") from exc
     try:
@@ -244,19 +246,26 @@ def _rule_files(directory: Path) -> list[Path]:
     return sorted(directory.glob("*.yaml"), key=lambda p: p.name)
 
 
-def load_rules(directory: Path) -> RuleSet:
+def load_rules(directory: Path, *, replacing: Mapping[str, str] | None = None) -> RuleSet:
     """Merge every ``*.yaml`` file of ``directory`` (sorted by filename) into one rule set.
+
+    ``replacing`` maps file names to YAML text used instead of (or in addition to) what is on
+    disk, to check a change before writing it.
 
     Raises:
         RulesError: unreadable or invalid file, duplicate ids, or several personas.
     """
+    replacing = replacing or {}
     persona: str | None = None
     persona_file = ""
     guidelines: list[Guideline] = []
     hard_rules: list[HardRule] = []
     seen: dict[str, str] = {}
-    for path in _rule_files(directory):
-        parsed = _parse_file(path)
+    paths = {p.name: p for p in _rule_files(directory)}
+    paths |= {name: directory / name for name in replacing}
+    for name in sorted(paths):
+        path = paths[name]
+        parsed = _parse_file(path, replacing.get(name))
         if parsed.persona is not None:
             if persona is not None:
                 raise RulesError(f"{path.name}: persona already defined in {persona_file}")
@@ -275,6 +284,25 @@ def load_rules(directory: Path) -> RuleSet:
     canonical = json.dumps(dumped, sort_keys=True)
     digest = hashlib.sha256(canonical.encode()).hexdigest()
     return ruleset.model_copy(update={"version_hash": digest})
+
+
+def validate_candidate(directory: Path, filename: str, content: str) -> RuleSet:
+    """The rule set that results from writing ``content`` to ``filename``, fully validated.
+
+    Raises:
+        RulesError: the result is invalid or defines no hard rules.
+    """
+    return _require_hard_rules(load_rules(directory, replacing={filename: content}))
+
+
+def write_rule_file(directory: Path, filename: str, content: str) -> None:
+    """Replace ``filename`` atomically: readers see the old or the new file, never half of one."""
+    temporary = directory / f".{filename}.{uuid.uuid4().hex}.tmp"
+    try:
+        temporary.write_text(content, encoding="utf-8", newline="\n")
+        os.replace(temporary, directory / filename)
+    finally:
+        temporary.unlink(missing_ok=True)
 
 
 class RuleSource(Protocol):

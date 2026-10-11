@@ -9,6 +9,10 @@ class ConfigurationError(BrainAgentError):
     """Raised when required configuration is missing or invalid."""
 
 
+class DuplicateEmailError(BrainAgentError):
+    """Raised when registering an email address that already has an account."""
+
+
 class ThreadBusyError(BrainAgentError):
     """Raised when a new turn is started on a thread that still has unfinished work."""
 
