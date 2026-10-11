@@ -108,7 +108,10 @@ function ApprovalForm({
 }) {
   const [drafts, setDrafts] = useState<Partial<Record<string, ApprovalDraft>>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const { mutate, isPending } = useSubmitReview(threadId, 'approvals');
+  const { mutate, isPending } = useSubmitReview(threadId, 'approvals', {
+    onSubmitting,
+    onFailed: onSubmitFailed,
+  });
   const complete = interrupt.actions.every((action) => drafts[action.action_id]);
 
   function setDraft(id: string, draft: ApprovalDraft) {
@@ -122,8 +125,7 @@ function ApprovalForm({
       setErrors(result.errors);
       return;
     }
-    onSubmitting();
-    mutate(result.payload, { onError: onSubmitFailed });
+    mutate(result.payload);
   }
 
   return (
@@ -194,7 +196,10 @@ function UncertainForm({
   onSubmitFailed: () => void;
 }) {
   const [drafts, setDrafts] = useState<Partial<Record<string, UncertainDraft>>>({});
-  const { mutate, isPending } = useSubmitReview(threadId, 'uncertain');
+  const { mutate, isPending } = useSubmitReview(threadId, 'uncertain', {
+    onSubmitting,
+    onFailed: onSubmitFailed,
+  });
   const complete = interrupt.actions.every((action) => drafts[action.action_id]);
 
   function setDraft(id: string, draft: UncertainDraft) {
@@ -208,8 +213,7 @@ function UncertainForm({
   function submit() {
     const result = buildUncertainPayload(interrupt.actions, drafts);
     if (!result.ok) return;
-    onSubmitting();
-    mutate(result.payload, { onError: onSubmitFailed });
+    mutate(result.payload);
   }
 
   return (

@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { api } from '@/shared/api/axios-instance';
 import { ChatPanel } from '../ChatPanel';
@@ -17,7 +18,7 @@ const detail = {
       id: 'm2',
       role: 'ai',
       content: '',
-      tool_calls: [{ id: 'c1', name: 'send_email', args: { to: 'a@b.co' } }],
+      tool_calls: [{ id: 'c1', name: 'send_email', args: { to: 'a@b.co' }, message: 'Unclear' }],
     },
   ],
   summary: null,
@@ -57,4 +58,39 @@ describe('ChatPanel', () => {
     expect(screen.getByRole('button', { name: 'Submit decisions' })).toBeDisabled();
     expect(screen.getByRole('textbox', { name: 'Message' })).toBeDisabled();
   });
+
+  it.each([
+    ['approvals', detail.pending_interrupt, 'Approve'],
+    [
+      'uncertain',
+      {
+        kind: 'uncertain_execution',
+        actions: [
+          { action_id: 'c1', tool_name: 'send_email', args: { to: 'a@b.co' }, message: 'Unclear' },
+        ],
+      },
+      'Retry',
+    ],
+  ])(
+    'restores the %s panel when the POST fails after it unmounted',
+    async (endpoint, pending, choice) => {
+      vi.spyOn(api, 'get').mockResolvedValue({ data: { ...detail, pending_interrupt: pending } });
+      const post = vi.spyOn(api, 'post').mockRejectedValue(new Error('Conflict'));
+      const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      render(
+        <QueryClientProvider client={client}>
+          <ChatPanel threadId="t1" />
+        </QueryClientProvider>,
+      );
+
+      await userEvent.click(await screen.findByRole('button', { name: choice }));
+      await userEvent.click(screen.getByRole('button', { name: 'Submit decisions' }));
+
+      expect(post).toHaveBeenCalledWith(`/threads/t1/${endpoint}`, expect.anything());
+      await waitFor(() => {
+        expect(screen.getByRole('status')).not.toHaveTextContent('Thinking');
+      });
+      expect(await screen.findByRole('button', { name: 'Submit decisions' })).toBeInTheDocument();
+    },
+  );
 });
