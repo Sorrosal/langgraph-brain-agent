@@ -29,7 +29,7 @@ Served over FastAPI (SSE streaming, JWT auth) with a React UI and a public landi
 - [x] **Phase 2 — Human-in-the-loop + idempotency**: `interrupt()` approvals, idempotent
   side effects.
 - [x] **Phase 3 — Brain**: rules (`rules/*.yaml`), long-term memory, context assembly.
-- [ ] **Phase 4 — Business tools**: email, tasks, CRM.
+- [x] **Phase 4 — Business tools**: email, tasks, CRM.
 - [ ] **Phase 5 — API**: FastAPI with SSE streaming and JWT auth.
 - [ ] **Phase 6 — Frontend + landing**: React (FSD) UI and GitHub Pages landing.
 - [ ] **Phase 7 — Production hardening**: observability, limits, security review.
