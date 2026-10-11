@@ -10,7 +10,7 @@ import {
   DropdownMenuTrigger,
 } from '@/shared/ui/dropdown-menu';
 import { cn } from '@/shared/lib/cn';
-import { useNotificationsStore } from '../model/notifications.store';
+import { selectUnreadCount, useNotificationsStore } from '../model/notifications.store';
 
 const typeColors = {
   info: 'text-blue-500',
@@ -20,8 +20,8 @@ const typeColors = {
 } as const;
 
 export function NotificationCenter() {
-  const { notifications, unreadCount, markAsRead, markAllAsRead, removeNotification } =
-    useNotificationsStore();
+  const { notifications, markAsRead, markAllAsRead, removeNotification } = useNotificationsStore();
+  const unreadCount = useNotificationsStore(selectUnreadCount);
 
   return (
     <DropdownMenu>

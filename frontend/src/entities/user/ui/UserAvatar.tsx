@@ -1,9 +1,9 @@
-import { Avatar, AvatarFallback, AvatarImage } from '@/shared/ui/avatar';
+import { Avatar, AvatarFallback } from '@/shared/ui/avatar';
 import { cn } from '@/shared/lib/cn';
 import type { User } from '../model/user.types';
 
 interface UserAvatarProps {
-  user: Pick<User, 'name' | 'avatarUrl'>;
+  user: Pick<User, 'display_name' | 'email'>;
   size?: 'sm' | 'md' | 'lg';
   className?: string;
 }
@@ -24,10 +24,10 @@ function getInitials(name: string): string {
 }
 
 export function UserAvatar({ user, size = 'md', className }: UserAvatarProps) {
+  const name = user.display_name || user.email;
   return (
     <Avatar className={cn(sizeClasses[size], className)}>
-      <AvatarImage src={user.avatarUrl} alt={user.name} />
-      <AvatarFallback>{getInitials(user.name)}</AvatarFallback>
+      <AvatarFallback>{getInitials(name)}</AvatarFallback>
     </Avatar>
   );
 }

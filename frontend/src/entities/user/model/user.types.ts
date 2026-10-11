@@ -1,17 +1,5 @@
-export interface User {
-  id: string;
-  name: string;
-  email: string;
-  avatarUrl?: string;
-  role: UserRole;
-  createdAt: string;
-  updatedAt: string;
-}
+import type { z } from 'zod';
+import type { userRoleSchema, userSchema } from './user.schemas';
 
-export type UserRole = 'admin' | 'editor' | 'viewer';
-
-export interface UserProfile extends User {
-  bio?: string;
-  location?: string;
-  website?: string;
-}
+export type User = z.infer<typeof userSchema>;
+export type UserRole = z.infer<typeof userRoleSchema>;
