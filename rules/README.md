@@ -62,7 +62,7 @@ one or more operators, all of which must hold:
 | `equals` / `not_equals` | is / is not equal to the given value |
 | `in` / `not_in` | is / is not one of the given list |
 | `matches` / `not_matches` | does / does not match the regex (`re.search`, so anchor with `^`/`$`) |
-| `gt`, `gte`, `lt`, `lte` | compares to a number (numeric strings are accepted; booleans and other text never match) |
+| `gt`, `gte`, `lt`, `lte` | compares to a number (numeric strings and decimals are accepted; booleans and other text never match) |
 | `any_not_matches` | has some recipient that does not match the regex (see below) |
 | `exists` | is present (`true`) or absent (`false`); `null` counts as present |
 

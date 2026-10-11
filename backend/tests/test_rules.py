@@ -1,6 +1,7 @@
 """Tests for the rules loader, matching operators and the reloading engine."""
 
 import os
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
@@ -331,3 +332,13 @@ def test_any_not_matches_splits_strings_and_lists(tmp_path: Path) -> None:
     assert not _matches(engine, {"to": "ok ok;ok"})
     assert _matches(engine, {"to": " ,"})
     assert _matches(engine, {})  # missing arguments fail closed like the other negative operators
+
+
+def test_numeric_operators_accept_decimal_amounts() -> None:
+    engine = RulesEngine(load_rules(REPO_ROOT / "rules"))
+
+    for amount in (Decimal("20000.00"), "20000.00", 20000):
+        assert [m.rule_id for m in engine.evaluate("crm_update_deal", {"amount": amount})] == [
+            "large-deal-needs-approval"
+        ]
+    assert engine.evaluate("crm_update_deal", {"amount": Decimal("10000")}) == []

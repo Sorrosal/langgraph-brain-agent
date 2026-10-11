@@ -9,6 +9,7 @@ import json
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass
+from decimal import Decimal
 from fnmatch import fnmatchcase
 from pathlib import Path
 from typing import Any, Literal, Protocol, Self
@@ -135,7 +136,7 @@ def _any_token_fails(pattern: str, value: Any) -> bool:
 def _as_number(value: Any) -> float | None:
     if isinstance(value, bool):
         return None
-    if isinstance(value, int | float):
+    if isinstance(value, int | float | Decimal):
         return float(value)
     if isinstance(value, str):
         try:
