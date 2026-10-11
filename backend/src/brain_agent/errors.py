@@ -58,3 +58,24 @@ class UncertainExecutionError(BrainAgentError):
         self.tool_name = tool_name
         self.call_id = call_id
         super().__init__(f"Tool call {call_id!r} ({tool_name}) has an uncertain outcome: {reason}")
+
+
+class NotFoundError(BrainAgentError):
+    """Raised when a business record (contact, deal, task) does not exist."""
+
+    def __init__(self, kind: str, record_id: str) -> None:
+        self.kind = kind
+        self.record_id = record_id
+        super().__init__(f"{kind} {record_id!r} not found")
+
+
+class IntegrationError(BrainAgentError):
+    """Raised when an external provider (SMTP, IMAP, ...) fails. Messages never hold secrets.
+
+    ``outcome_unknown`` is set when the side effect may have happened despite the failure (a
+    timeout after the message was handed over), so retrying could repeat it.
+    """
+
+    def __init__(self, message: str, *, outcome_unknown: bool = False) -> None:
+        self.outcome_unknown = outcome_unknown
+        super().__init__(message)

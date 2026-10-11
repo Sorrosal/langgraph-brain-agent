@@ -33,12 +33,33 @@ hard_rules:
     risk: high
     reason: External recipients need a human check before anything is sent.
 
+  - id: external-cc-needs-approval
+    description: Emails copying (cc) recipients outside @acme.com require human approval.
+    when:
+      tool: send_email
+      args:
+        # `matches` keeps a missing or empty cc out of scope; any_not_matches judges each address.
+        cc: { matches: '\S', any_not_matches: '^<?[^@<>\s]+@acme[.]com>?$' }
+    action: require_approval
+    risk: high
+    reason: External recipients need a human check before anything is sent.
+
   - id: bulk-email-needs-approval
     description: Emails to more than 5 recipients require human approval.
     when:
       tool: send_email
       args:
         to.5: { exists: true }
+    action: require_approval
+    risk: high
+    reason: Bulk emails need a human check before anything is sent.
+
+  - id: bulk-email-string-needs-approval
+    description: Same as the bulk rule, for recipients given as one comma/semicolon-separated string.
+    when:
+      tool: send_email
+      args:
+        to: { matches: '([,;][^,;]*){5}' }
     action: require_approval
     risk: high
     reason: Bulk emails need a human check before anything is sent.

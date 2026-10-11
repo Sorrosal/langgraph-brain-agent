@@ -7,6 +7,8 @@ its side effect (sent an email) could do it again. Every call is therefore recor
 * no record -> record ``started``, run the tool, record the result;
 * ``succeeded`` -> return the stored result without running the tool (``tool_replayed``);
 * ``failed`` -> run again: a failure is not a committed side effect, so it is retryable;
+* a not ``retry_safe`` tool failing with ``outcome_unknown`` (e.g. a timeout after SMTP DATA)
+  stays ``started`` instead of ``failed``, so it is escalated like the case below;
 * ``started`` -> the previous process died mid-execution and the outcome is *unknown*. If the
   tool declares ``metadata["retry_safe"] = True`` (the provider deduplicates on the key from
   :func:`current_idempotency_key`) it runs again with the same key. Otherwise a human decides
@@ -143,6 +145,11 @@ def make_execution_wrapper(
             await ledger.fail(key, "interrupted before completion")
             raise
         except Exception as exc:
+            if getattr(exc, "outcome_unknown", False) and not _retry_safe(request.tool):
+                # Leave the record 'started': the effect may have happened, a human decides.
+                reason = f"The attempt failed with an unknown outcome ({type(exc).__name__})."
+                logger.error("tool_execution_uncertain", key=key, reason=reason)
+                raise UncertainExecutionError(call["name"], str(call["id"]), reason) from exc
             await ledger.fail(key, f"{type(exc).__name__}: {exc}")
             raise
         finally:
@@ -239,6 +246,9 @@ def make_tools_node(tools: Sequence[BaseTool], ledger: ToolLedger) -> ToolsNode:
     async def tools_node(state: Any, config: RunnableConfig) -> Any:
         if await _uncertain_calls(state, tools_by_name, ledger, _thread_id(config)):
             return {}  # nothing ran; the router sends the batch back
-        return await tool_node.ainvoke(state, config)
+        try:
+            return await tool_node.ainvoke(state, config)
+        except UncertainExecutionError:  # the record stays 'started'; the router asks a human
+            return {}
 
     return tools_node

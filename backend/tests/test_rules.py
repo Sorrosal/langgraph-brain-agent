@@ -1,6 +1,7 @@
 """Tests for the rules loader, matching operators and the reloading engine."""
 
 import os
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
@@ -323,6 +324,25 @@ def test_external_email_rule_allows_all_internal_recipients(to: Any) -> None:
     assert _default_requires_approval(to) is False
 
 
+def _default_cc_requires_approval(args: dict[str, Any]) -> bool:
+    engine = RulesEngine(load_rules(REPO_ROOT / "rules"))
+    matched = engine.evaluate("send_email", {"to": ["a@acme.com"], **args})
+    return "external-cc-needs-approval" in {m.rule_id for m in matched}
+
+
+@pytest.mark.parametrize(
+    "cc",
+    ["b@gmail.com", "a@acme.com, b@gmail.com", ["a@acme.com", "Bob <b@gmail.com>"]],
+)
+def test_external_cc_requires_approval(cc: Any) -> None:
+    assert _default_cc_requires_approval({"cc": cc}) is True
+
+
+@pytest.mark.parametrize("args", [{}, {"cc": []}, {"cc": ["b@acme.com"]}, {"cc": "b@acme.com"}])
+def test_missing_or_internal_cc_needs_no_approval(args: dict[str, Any]) -> None:
+    assert _default_cc_requires_approval(args) is False
+
+
 def test_any_not_matches_splits_strings_and_lists(tmp_path: Path) -> None:
     engine = _engine(tmp_path, {"to": "{any_not_matches: '^ok$'}"})
 
@@ -331,3 +351,13 @@ def test_any_not_matches_splits_strings_and_lists(tmp_path: Path) -> None:
     assert not _matches(engine, {"to": "ok ok;ok"})
     assert _matches(engine, {"to": " ,"})
     assert _matches(engine, {})  # missing arguments fail closed like the other negative operators
+
+
+def test_numeric_operators_accept_decimal_amounts() -> None:
+    engine = RulesEngine(load_rules(REPO_ROOT / "rules"))
+
+    for amount in (Decimal("20000.00"), "20000.00", 20000):
+        assert [m.rule_id for m in engine.evaluate("crm_update_deal", {"amount": amount})] == [
+            "large-deal-needs-approval"
+        ]
+    assert engine.evaluate("crm_update_deal", {"amount": Decimal("10000")}) == []
