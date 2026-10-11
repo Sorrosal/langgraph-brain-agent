@@ -79,11 +79,25 @@ class Settings(BaseSettings):
     """Per user."""
     rate_limit_rules_writes_per_minute: int = Field(default=10, ge=1)
     """Per user. All limits are in-process: with several replicas each one counts alone."""
+    rate_limit_login_ip_per_minute: int = Field(default=30, ge=1)
+    """Per client IP across all emails (the per-email limit above is checked as well)."""
+    rate_limit_max_buckets: int = Field(default=10_000, ge=1)
+    """Upper bound of in-memory rate-limit buckets; the least recently used are evicted."""
     sse_heartbeat_seconds: float = Field(default=15, gt=0)
     """Idle time after which an event stream sends a keep-alive comment."""
     allow_registration: bool | None = None
     """Open self-registration; unset means enabled in development only (never in production)."""
     cors_origins: list[str] = ["http://localhost:5173"]
+    log_format: Literal["json", "console"] | None = None
+    """Unset means ``json`` in production and ``console`` elsewhere."""
+    otel_exporter_otlp_endpoint: str | None = None
+    """OTLP/HTTP base URL (e.g. ``http://collector:4318``); unset disables OpenTelemetry."""
+
+    @property
+    def effective_log_format(self) -> Literal["json", "console"]:
+        if self.log_format is not None:
+            return self.log_format
+        return "json" if self.environment == "production" else "console"
 
     @property
     def registration_enabled(self) -> bool:

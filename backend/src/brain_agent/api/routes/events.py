@@ -28,11 +28,16 @@ async def _stream(
     events = container.events.subscribe(thread_id, after)
     heartbeat = container.settings.sse_heartbeat_seconds
     pending: asyncio.Future[Event] | None = None
+    stopping = asyncio.ensure_future(request.app.state.shutdown.wait())
     try:
         while True:
             # A waiting anext() must survive heartbeats: cancelling it would close the iterator.
             pending = pending or asyncio.ensure_future(anext(events))
-            done, _ = await asyncio.wait({pending}, timeout=heartbeat)
+            done, _ = await asyncio.wait(
+                {pending, stopping}, timeout=heartbeat, return_when=asyncio.FIRST_COMPLETED
+            )
+            if stopping.done():
+                return  # the server is shutting down: do not hold its connections open
             if not done:
                 if await request.is_disconnected():
                     return
@@ -45,6 +50,7 @@ async def _stream(
                 return  # the broker was closed: the application is shutting down
             yield frame(event)
     finally:
+        stopping.cancel()
         if pending is not None:
             pending.cancel()
             with contextlib.suppress(asyncio.CancelledError):

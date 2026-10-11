@@ -5,6 +5,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from brain_agent.api.request_id import HEADER, request_id_of
 from brain_agent.errors import (
@@ -65,6 +66,35 @@ def _internal_error(request: Request, exc: Exception) -> JSONResponse:
         }
     }
     return JSONResponse(body, status_code=500, headers={HEADER: request_id or ""})
+
+
+class UnhandledErrorMiddleware:
+    """Turns an escaping exception into the 500 body *inside* the CORS middleware.
+
+    Starlette's own 500 handler sits outside every user middleware, so its response would
+    carry neither CORS nor security headers and the browser would hide the error.
+    """
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        started = False
+
+        async def tracking_send(message: Message) -> None:
+            nonlocal started
+            started = started or message["type"] == "http.response.start"
+            await send(message)
+
+        try:
+            await self.app(scope, receive, tracking_send)
+        except Exception as exc:
+            if started:
+                raise
+            await _internal_error(Request(scope), exc)(scope, receive, send)
 
 
 def install_error_handlers(app: FastAPI) -> None:

@@ -3,7 +3,10 @@ import { z } from 'zod';
 const DEV_API_URL = 'http://localhost:8000';
 
 const envSchema = z.object({
-  VITE_API_URL: z.url().transform((url) => url.replace(/\/+$/, '')),
+  // Absolute URL, or a same-origin path such as `/api` (behind a reverse proxy).
+  VITE_API_URL: z
+    .union([z.url(), z.string().regex(/^\/(?!\/)/)])
+    .transform((url) => url.replace(/\/+$/, '')),
   VITE_APP_NAME: z.string().default('Brain Agent'),
   VITE_LANDING_ONLY: z
     .enum(['true', 'false'])

@@ -181,13 +181,9 @@ async def register(
 @router.post("/login", response_model=TokenOut)
 async def login(body: LoginRequest, container: Container, request: Request) -> TokenOut:
     email = body.email.strip().lower()
-    enforce(
-        request,
-        "login",
-        f"{client_ip(request)}|{email}",
-        container.settings.rate_limit_login_per_minute,
-        60,
-    )
+    ip = client_ip(request)
+    enforce(request, "login-ip", ip, container.settings.rate_limit_login_ip_per_minute, 60)
+    enforce(request, "login", f"{ip}|{email}", container.settings.rate_limit_login_per_minute, 60)
     user = await container.users.get_by_email(email)
     hashed = user.password_hash if user else _DUMMY_HASH
     valid = await _hashed(request, lambda: _hasher.verify(body.password, hashed))

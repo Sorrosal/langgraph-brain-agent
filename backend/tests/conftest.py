@@ -38,11 +38,16 @@ def _database_available(database_url: str) -> None:
         if os.environ.get("REQUIRE_INTEGRATION") == "1":
             pytest.fail(reason, pytrace=False)
         pytest.skip(reason)
+    # Install pgvector once in ``public`` (as a real deployment has it) instead of letting the
+    # first store setup create it inside a throwaway schema that the test then drops.
+    with psycopg.connect(database_url, autocommit=True) as conn:
+        conn.execute("CREATE EXTENSION IF NOT EXISTS vector SCHEMA public")
 
 
 def url_with_search_path(database_url: str, schema: str) -> str:
+    # ``public`` stays on the path so extension types such as ``vector`` resolve.
     separator = "&" if "?" in database_url else "?"
-    return f"{database_url}{separator}options={quote(f'-c search_path={schema}')}"
+    return f"{database_url}{separator}options={quote(f'-c search_path={schema},public')}"
 
 
 @pytest.fixture

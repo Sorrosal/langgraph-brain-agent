@@ -33,10 +33,15 @@ from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import BaseTool
 from langgraph.errors import GraphBubbleUp
 from langgraph.prebuilt import ToolNode
-from langgraph.prebuilt.tool_node import ToolCallRequest
+from langgraph.prebuilt.tool_node import ToolCallRequest, ToolInvocationError
 from langgraph.types import Command, Send, interrupt
 
-from brain_agent.errors import ConfigurationError, UncertainExecutionError
+from brain_agent.errors import (
+    MAX_ERROR_CHARS,
+    ConfigurationError,
+    UncertainExecutionError,
+    safe_error,
+)
 from brain_agent.graph.nodes import TOOLS_NODE
 from brain_agent.hitl.models import (
     ConfirmDone,
@@ -45,6 +50,7 @@ from brain_agent.hitl.models import (
     UncertainExecutionInterrupt,
     UncertainResponse,
 )
+from brain_agent.observability.tracing import ToolObservation, observe_tool
 from brain_agent.persistence.tool_ledger import ExecutionRecord, ToolLedger
 
 logger = structlog.get_logger(__name__)
@@ -115,12 +121,25 @@ def _skipped(call: ToolCall) -> ToolMessage:
     )
 
 
+def _handle_tool_errors(exc: Exception) -> str:
+    """Text of a tool error answered to the model: sanitized; other exceptions propagate."""
+    if isinstance(exc, ToolInvocationError):
+        return safe_error(exc)
+    raise exc
+
+
 def make_execution_wrapper(
     ledger: ToolLedger,
 ) -> Callable[[ToolCallRequest, Execute], Awaitable[ToolResult]]:
     """``awrap_tool_call`` hook that records each call in ``ledger`` and replays stored results."""
 
     async def wrapper(request: ToolCallRequest, execute: Execute) -> ToolResult:
+        with observe_tool(request.tool_call["name"], _retry_safe(request.tool)) as observed:
+            return await recorded(request, execute, observed)
+
+    async def recorded(
+        request: ToolCallRequest, execute: Execute, observed: ToolObservation
+    ) -> ToolResult:
         call = request.tool_call
         thread_id = _thread_id(request.runtime.config)
         key = idempotency_key(thread_id, str(call["id"]))
@@ -129,9 +148,11 @@ def make_execution_wrapper(
         if not record.is_new:
             if reason := uncertain_reason(record, request.tool, digest):
                 logger.error("tool_execution_uncertain", key=key, reason=reason)
+                observed.outcome = "escalated"
                 raise UncertainExecutionError(call["name"], str(call["id"]), reason)
             if record.status == "succeeded":
                 logger.info("tool_replayed", key=key, tool=call["name"])
+                observed.outcome = "replayed"
                 return _replay(record, call)
             if record.status == "failed" and record.error == SKIPPED_ERROR:
                 return _skipped(call)
@@ -142,6 +163,7 @@ def make_execution_wrapper(
         try:
             output = await execute(request)
         except GraphBubbleUp:
+            observed.outcome = "interrupted"
             await ledger.fail(key, "interrupted before completion")
             raise
         except Exception as exc:
@@ -149,13 +171,16 @@ def make_execution_wrapper(
                 # Leave the record 'started': the effect may have happened, a human decides.
                 reason = f"The attempt failed with an unknown outcome ({type(exc).__name__})."
                 logger.error("tool_execution_uncertain", key=key, reason=reason)
+                observed.outcome = "escalated"
                 raise UncertainExecutionError(call["name"], str(call["id"]), reason) from exc
-            await ledger.fail(key, f"{type(exc).__name__}: {exc}")
+            observed.outcome = "failed"
+            await ledger.fail(key, safe_error(exc))
             raise
         finally:
             _current_key.reset(token)
         if isinstance(output, ToolMessage) and output.status == "error":
-            await ledger.fail(key, output.text)
+            observed.outcome = "failed"
+            await ledger.fail(key, output.text[:MAX_ERROR_CHARS])
         elif isinstance(output, ToolMessage):
             await ledger.complete(key, {"content": output.content, "status": "success"})
         else:
@@ -241,7 +266,11 @@ def make_tools_node(tools: Sequence[BaseTool], ledger: ToolLedger) -> ToolsNode:
     the final backstop.
     """
     tools_by_name = {tool.name: tool for tool in tools}
-    tool_node = ToolNode(tools, awrap_tool_call=make_execution_wrapper(ledger))
+    tool_node = ToolNode(
+        tools,
+        handle_tool_errors=_handle_tool_errors,
+        awrap_tool_call=make_execution_wrapper(ledger),
+    )
 
     async def tools_node(state: Any, config: RunnableConfig) -> Any:
         if await _uncertain_calls(state, tools_by_name, ledger, _thread_id(config)):

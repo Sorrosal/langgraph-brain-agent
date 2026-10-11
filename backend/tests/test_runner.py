@@ -271,7 +271,7 @@ async def test_transient_failure_keeps_run_recoverable() -> None:
     record = ledger.records["thread-1"]
     assert record.status == "running"
     assert record.last_error is not None
-    assert "db down" in record.last_error
+    assert record.last_error == "ConnectionError"  # class only, never the raw message
 
 
 async def test_permanent_failure_marks_run_failed() -> None:
@@ -291,7 +291,7 @@ async def test_permanent_failure_marks_run_failed() -> None:
     record = ledger.records["thread-1"]
     assert record.status == "failed"
     assert record.last_error is not None
-    assert "bad input" in record.last_error
+    assert record.last_error == "ValueError"
 
 
 async def test_resume_keeps_attempt_count_and_completes_the_run() -> None:
@@ -363,7 +363,7 @@ async def test_run_after_permanent_failure_closes_dangling_tool_call() -> None:
     _assert_every_tool_call_answered(seen)
     closing = next(m for m in seen if isinstance(m, ToolMessage))
     assert (closing.tool_call_id, closing.status) == ("call-1", "error")
-    assert "bad input" in closing.text
+    assert "bad input" not in closing.text and "ValueError" in closing.text
     assert seen[-1].text == "again"
     assert ledger.records["thread-1"].status == "completed"
 
