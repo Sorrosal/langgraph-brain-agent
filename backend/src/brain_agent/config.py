@@ -34,6 +34,16 @@ class Settings(BaseSettings):
     database_url: str = "postgresql://brain:brain@127.0.0.1:5432/brain"
     log_level: LogLevel = "INFO"
     environment: Environment = "development"
+    openai_embedding_model: str = "text-embedding-3-small"
+    context_max_tokens: int = 12000
+    """Approximate token budget of the conversation before older messages are summarised."""
+    context_keep_last_messages: int = 12
+    """Most recent messages that are never summarised away."""
+    memory_recall_limit: int = 5
+    memory_extraction_enabled: bool = True
+    """Extract durable memories from each finished turn (one extra model call per turn)."""
+    rules_dir: Path = REPO_ROOT / "rules"
+    """Directory of ``*.yaml`` rule files (see ``rules/README.md``)."""
 
 
 @lru_cache(maxsize=1)

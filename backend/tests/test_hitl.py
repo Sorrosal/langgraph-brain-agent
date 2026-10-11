@@ -91,7 +91,7 @@ def test_policy_requires_approval_for_high_risk_or_flagged_tools() -> None:
     assert policy.evaluate(_call("ghost"), None) is None
 
 
-def test_composite_policy_first_verdict_wins() -> None:
+def test_composite_policy_earliest_verdict_wins_a_tie() -> None:
     verdict = PolicyVerdict(risk="medium", reason="rule")
 
     class Always:

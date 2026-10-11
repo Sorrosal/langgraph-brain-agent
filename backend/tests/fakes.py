@@ -1,10 +1,14 @@
 """Deterministic test doubles for the agent graph."""
 
+import hashlib
+import math
+import re
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
 from typing import Any
 
 from langchain_core.callbacks import AsyncCallbackManagerForLLMRun, CallbackManagerForLLMRun
+from langchain_core.embeddings import Embeddings
 from langchain_core.language_models import BaseChatModel, LanguageModelInput
 from langchain_core.messages import AIMessage, BaseMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
@@ -242,3 +246,21 @@ class InMemoryToolLedger:
     async def get(self, key: str) -> ExecutionRecord | None:
         record = self.records.get(key)
         return replace(record, is_new=False) if record else None
+
+
+class BagOfWordsEmbeddings(Embeddings):
+    """Deterministic embeddings where texts sharing words are close (cosine), so recall order
+    in tests is meaningful. Words hash into ``dims`` buckets; vectors are L2-normalised."""
+
+    DIMS = 64
+
+    def embed_query(self, text: str) -> list[float]:
+        vector = [0.0] * self.DIMS
+        for word in re.findall(r"[a-z0-9]+", text.lower()) or [""]:
+            bucket = int(hashlib.md5(word.encode()).hexdigest(), 16) % self.DIMS
+            vector[bucket] += 1.0
+        norm = math.sqrt(sum(x * x for x in vector))
+        return [x / norm for x in vector]
+
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        return [self.embed_query(text) for text in texts]

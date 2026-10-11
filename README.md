@@ -28,7 +28,7 @@ Served over FastAPI (SSE streaming, JWT auth) with a React UI and a public landi
 - [x] **Phase 1 — Core graph**: LangGraph agent, PostgreSQL checkpointer, crash recovery.
 - [x] **Phase 2 — Human-in-the-loop + idempotency**: `interrupt()` approvals, idempotent
   side effects.
-- [ ] **Phase 3 — Brain**: rules (`rules/*.yaml`), long-term memory, context assembly.
+- [x] **Phase 3 — Brain**: rules (`rules/*.yaml`), long-term memory, context assembly.
 - [ ] **Phase 4 — Business tools**: email, tasks, CRM.
 - [ ] **Phase 5 — API**: FastAPI with SSE streaming and JWT auth.
 - [ ] **Phase 6 — Frontend + landing**: React (FSD) UI and GitHub Pages landing.

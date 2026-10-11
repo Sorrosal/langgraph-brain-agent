@@ -5,12 +5,15 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 
+from langchain_core.embeddings import Embeddings
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from langgraph.store.postgres.aio import AsyncPostgresStore
+from langgraph.store.postgres.base import PostgresIndexConfig
 from psycopg import AsyncConnection
 from psycopg.rows import DictRow, dict_row
 from psycopg_pool import AsyncConnectionPool
 
+from brain_agent.llm import EMBEDDING_DIMS
 from brain_agent.persistence.runs import RunRegistry
 from brain_agent.persistence.tool_ledger import ToolExecutionLedger
 
@@ -37,12 +40,20 @@ class Persistence:
 
 @asynccontextmanager
 async def open_persistence(
-    database_url: str, *, min_size: int = 1, max_size: int = 10
+    database_url: str,
+    *,
+    min_size: int = 1,
+    max_size: int = 10,
+    embeddings: Embeddings | None = None,
+    embedding_dims: int = EMBEDDING_DIMS,
 ) -> AsyncIterator[Persistence]:
     """Open a connection pool and set up checkpointer, store and run registry on it.
 
     Connections use ``autocommit=True``, ``prepare_threshold=0`` and ``dict_row``, which
     langgraph-checkpoint-postgres requires. All schema setup is idempotent.
+
+    With ``embeddings`` the store gets a pgvector index over each memory's ``text`` (vectors of
+    ``embedding_dims``, fixed once the table exists); without it semantic recall is unavailable.
     """
     pool: AsyncConnectionPool[AsyncConnection[DictRow]] = AsyncConnectionPool(
         database_url,
@@ -54,7 +65,12 @@ async def open_persistence(
     )
     async with pool:
         checkpointer = AsyncPostgresSaver(pool)
-        store = AsyncPostgresStore(pool)
+        index: PostgresIndexConfig | None = (
+            {"dims": embedding_dims, "embed": embeddings, "fields": ["text"]}
+            if embeddings is not None
+            else None
+        )
+        store = AsyncPostgresStore(pool, index=index)
         runs = RunRegistry(pool)
         tool_ledger = ToolExecutionLedger(pool)
         # Session-level lock on a dedicated connection (not the pool, which setup also needs).
