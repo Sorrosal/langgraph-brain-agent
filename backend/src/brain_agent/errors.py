@@ -58,3 +58,12 @@ class UncertainExecutionError(BrainAgentError):
         self.tool_name = tool_name
         self.call_id = call_id
         super().__init__(f"Tool call {call_id!r} ({tool_name}) has an uncertain outcome: {reason}")
+
+
+class NotFoundError(BrainAgentError):
+    """Raised when a business record (contact, deal, task) does not exist."""
+
+    def __init__(self, kind: str, record_id: str) -> None:
+        self.kind = kind
+        self.record_id = record_id
+        super().__init__(f"{kind} {record_id!r} not found")

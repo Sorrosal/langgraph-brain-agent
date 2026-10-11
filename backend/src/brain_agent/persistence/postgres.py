@@ -13,6 +13,11 @@ from psycopg import AsyncConnection
 from psycopg.rows import DictRow, dict_row
 from psycopg_pool import AsyncConnectionPool
 
+from brain_agent.integrations.postgres import (
+    PostgresCrmRepository,
+    PostgresTaskRepository,
+    setup_integrations,
+)
 from brain_agent.llm import EMBEDDING_DIMS
 from brain_agent.persistence.runs import RunRegistry
 from brain_agent.persistence.tool_ledger import ToolExecutionLedger
@@ -29,12 +34,15 @@ async def _try_lock(conn: AsyncConnection[DictRow]) -> bool:
 
 @dataclass(frozen=True, slots=True)
 class Persistence:
-    """Everything that survives a process: checkpoints, store, run registry and tool ledger."""
+    """Everything that survives a process: checkpoints, store, run registry, tool ledger and the
+    CRM and task repositories."""
 
     checkpointer: AsyncPostgresSaver
     store: AsyncPostgresStore
     runs: RunRegistry
     tool_ledger: ToolExecutionLedger
+    crm: PostgresCrmRepository
+    tasks: PostgresTaskRepository
     pool: AsyncConnectionPool[AsyncConnection[DictRow]]
 
 
@@ -86,8 +94,15 @@ async def open_persistence(
                 await store.setup()
                 await runs.setup()
                 await tool_ledger.setup()
+                await setup_integrations(pool)
             finally:
                 await lock_conn.execute("SELECT pg_advisory_unlock(%s)", (_SETUP_LOCK_KEY,))
         yield Persistence(
-            checkpointer=checkpointer, store=store, runs=runs, tool_ledger=tool_ledger, pool=pool
+            checkpointer=checkpointer,
+            store=store,
+            runs=runs,
+            tool_ledger=tool_ledger,
+            crm=PostgresCrmRepository(pool),
+            tasks=PostgresTaskRepository(pool),
+            pool=pool,
         )
