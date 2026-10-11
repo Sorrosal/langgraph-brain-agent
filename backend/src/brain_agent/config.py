@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Literal, Self
 
 import structlog
-from pydantic import SecretStr, model_validator
+from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from brain_agent.errors import ConfigurationError
@@ -68,9 +68,21 @@ class Settings(BaseSettings):
     """Directory of ``*.yaml`` rule files (see ``rules/README.md``)."""
     jwt_secret: SecretStr | None = None
     """HS256 signing key. Required (32+ characters) in production; development generates one."""
-    jwt_ttl_minutes: int = 60
+    jwt_ttl_minutes: int = Field(default=60, ge=5, le=1440)
+    auth_hash_concurrency: int = Field(default=4, ge=1)
+    """Password hashes/verifications (argon2 is CPU- and memory-hungry) running at once."""
+    rate_limit_login_per_minute: int = Field(default=10, ge=1)
+    """Per client IP and email."""
+    rate_limit_register_per_hour: int = Field(default=5, ge=1)
+    """Per client IP."""
+    rate_limit_messages_per_minute: int = Field(default=30, ge=1)
+    """Per user."""
+    rate_limit_rules_writes_per_minute: int = Field(default=10, ge=1)
+    """Per user. All limits are in-process: with several replicas each one counts alone."""
+    sse_heartbeat_seconds: float = Field(default=15, gt=0)
+    """Idle time after which an event stream sends a keep-alive comment."""
     allow_registration: bool | None = None
-    """Open self-registration; unset means enabled in development only."""
+    """Open self-registration; unset means enabled in development only (never in production)."""
     cors_origins: list[str] = ["http://localhost:5173"]
 
     @property

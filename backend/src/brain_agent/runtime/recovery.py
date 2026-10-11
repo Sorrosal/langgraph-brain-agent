@@ -2,6 +2,8 @@
 
 import asyncio
 import contextlib
+import time
+from collections.abc import Awaitable, Callable
 from typing import Protocol
 
 import structlog
@@ -118,3 +120,55 @@ async def recover_on_startup(worker: RecoveryWorker) -> list[str]:
             break
         recovered.extend(claimed)
     return recovered
+
+
+class SupervisedLoop:
+    """Keeps a background loop alive: when ``run`` crashes it is logged and restarted with backoff.
+
+    ``healthy`` is false while the loop is down (crashed and waiting to restart, or stopped), so
+    ``/ready`` can report degraded service instead of silently losing recovery.
+    """
+
+    def __init__(
+        self,
+        run: Callable[[asyncio.Event], Awaitable[None]],
+        *,
+        name: str = "recovery",
+        initial_backoff: float = 1.0,
+        max_backoff: float = 30.0,
+    ) -> None:
+        self._run = run
+        self._name = name
+        self._initial_backoff = initial_backoff
+        self._max_backoff = max_backoff
+        self._down = False
+        self.restarts = 0
+
+    @property
+    def healthy(self) -> bool:
+        return not self._down
+
+    async def run_forever(self, stop_event: asyncio.Event) -> None:
+        backoff = self._initial_backoff
+        try:
+            while not stop_event.is_set():
+                started = time.monotonic()
+                try:
+                    await self._run(stop_event)
+                except Exception:
+                    logger.exception("background_worker_crashed", worker=self._name)
+                else:
+                    if stop_event.is_set():
+                        return
+                    logger.error("background_worker_exited", worker=self._name)
+                self._down = True
+                if time.monotonic() - started > self._max_backoff:
+                    backoff = self._initial_backoff  # it ran for a while: not a crash loop
+                with contextlib.suppress(TimeoutError):
+                    await asyncio.wait_for(stop_event.wait(), timeout=backoff)
+                backoff = min(backoff * 2, self._max_backoff)
+                if not stop_event.is_set():
+                    self.restarts += 1
+                    self._down = False
+        finally:
+            self._down = True

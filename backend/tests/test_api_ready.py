@@ -47,7 +47,8 @@ async def test_postgres_container_round_trip(schema_url: str) -> None:
         assert user.role == "admin"
         thread = await container.threads.create(user.id, "")
         container.supervisor.start(
-            thread.id, lambda: container.runner.run(thread.id, "hi", user_id=user.id)
+            thread.id,
+            lambda sink: container.runner.run(thread.id, "hi", user_id=user.id, sink=sink),
         )
         for _ in range(200):
             if not container.supervisor.is_running(thread.id):

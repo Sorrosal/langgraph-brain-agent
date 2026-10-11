@@ -10,6 +10,7 @@ from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.store.base import BaseStore
 
 from brain_agent.brain.context import ContextBudget
+from brain_agent.brain.memory import MemoryService
 from brain_agent.brain.rules import RulesEngine, YamlRuleSource
 from brain_agent.config import Settings
 from brain_agent.graph.builder import build_graph
@@ -23,6 +24,7 @@ from brain_agent.persistence.runs import RunLedger
 from brain_agent.persistence.threads import ThreadRepository
 from brain_agent.persistence.tool_ledger import ToolLedger
 from brain_agent.persistence.users import UserRepository
+from brain_agent.runtime.events import EventBroker
 from brain_agent.runtime.recovery import RecoveryWorker
 from brain_agent.runtime.runner import AgentRunner, RunResult
 from brain_agent.runtime.supervisor import RunSupervisor
@@ -42,6 +44,11 @@ class AppContainer:
     runs: RunLedger
     supervisor: RunSupervisor
     rules: RulesEngine
+    memory: MemoryService
+    events: EventBroker
+    crm: CrmRepository
+    tasks: TaskRepository
+    email: EmailGateway
     ping: Ping
     """Raises when the database is unreachable."""
     recovery: RecoveryWorker | None = None
@@ -53,9 +60,10 @@ ContainerFactory = Callable[[Settings], AbstractAsyncContextManager[AppContainer
 class _OwnerAwareResumer:
     """Lets the recovery worker resume a run on behalf of the thread's owner."""
 
-    def __init__(self, runner: AgentRunner, threads: ThreadRepository) -> None:
+    def __init__(self, runner: AgentRunner, threads: ThreadRepository, events: EventBroker) -> None:
         self._runner = runner
         self._threads = threads
+        self._events = events
 
     @property
     def owner_id(self) -> str:
@@ -67,9 +75,10 @@ class _OwnerAwareResumer:
 
     async def resume(self, thread_id: str) -> RunResult:
         user_id = await self._threads.owner_of(thread_id)
+        sink = self._events.sink(thread_id)
         if user_id is None:
-            return await self._runner.resume(thread_id)
-        return await self._runner.resume(thread_id, user_id=user_id)
+            return await self._runner.resume(thread_id, sink=sink)
+        return await self._runner.resume(thread_id, user_id=user_id, sink=sink)
 
 
 def assemble_container(
@@ -106,16 +115,22 @@ def assemble_container(
         memory_recall_limit=settings.memory_recall_limit,
     )
     runner = AgentRunner(graph, runs=runs)
+    events = EventBroker()
     return AppContainer(
         settings=settings,
         users=users,
         threads=threads,
         runner=runner,
         runs=runs,
-        supervisor=RunSupervisor(),
+        supervisor=RunSupervisor(events),
         rules=rules,
+        memory=MemoryService(store),
+        events=events,
+        crm=crm,
+        tasks=tasks,
+        email=email,
         ping=ping,
-        recovery=RecoveryWorker(_OwnerAwareResumer(runner, threads), runs),
+        recovery=RecoveryWorker(_OwnerAwareResumer(runner, threads, events), runs),
     )
 
 

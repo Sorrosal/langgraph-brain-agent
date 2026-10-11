@@ -1,10 +1,12 @@
 """One JSON error body for every failure: ``{"error": {"code", "message"}}``."""
 
+import structlog
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from brain_agent.api.request_id import HEADER, request_id_of
 from brain_agent.errors import (
     BrainAgentError,
     DuplicateEmailError,
@@ -14,6 +16,8 @@ from brain_agent.errors import (
     NotFoundError,
     ThreadBusyError,
 )
+
+logger = structlog.get_logger(__name__)
 
 # Most specific first; the first isinstance match wins.
 DOMAIN_ERRORS: tuple[tuple[type[BrainAgentError], int, str], ...] = (
@@ -43,12 +47,35 @@ def error_response(
     return JSONResponse(body, status_code=status_code, headers=headers)
 
 
+def _internal_error(request: Request, exc: Exception) -> JSONResponse:
+    """Log the failure with its request id; the client gets the id, never the exception."""
+    request_id = request_id_of(request.scope)
+    logger.error(
+        "unhandled_exception",
+        request_id=request_id,
+        path=request.url.path,
+        method=request.method,
+        exc_info=exc,
+    )
+    body = {
+        "error": {
+            "code": "internal_error",
+            "message": "Internal server error",
+            "request_id": request_id,
+        }
+    }
+    return JSONResponse(body, status_code=500, headers={HEADER: request_id or ""})
+
+
 def install_error_handlers(app: FastAPI) -> None:
-    async def domain(_: Request, exc: Exception) -> JSONResponse:
+    async def domain(request: Request, exc: Exception) -> JSONResponse:
         for kind, status, code in DOMAIN_ERRORS:
             if isinstance(exc, kind):
                 return error_response(status, code, str(exc))
-        return error_response(500, "internal_error", "Internal server error")
+        return _internal_error(request, exc)
+
+    async def unhandled(request: Request, exc: Exception) -> JSONResponse:
+        return _internal_error(request, exc)
 
     async def http(_: Request, exc: Exception) -> JSONResponse:
         assert isinstance(exc, StarletteHTTPException)
@@ -61,6 +88,7 @@ def install_error_handlers(app: FastAPI) -> None:
         where = ".".join(str(part) for part in first["loc"])
         return error_response(422, "validation_error", f"{where}: {first['msg']}")
 
+    app.add_exception_handler(Exception, unhandled)
     app.add_exception_handler(BrainAgentError, domain)
     app.add_exception_handler(StarletteHTTPException, http)
     app.add_exception_handler(RequestValidationError, validation)

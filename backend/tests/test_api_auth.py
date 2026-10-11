@@ -19,8 +19,7 @@ async def test_register_login_me_and_first_user_is_admin() -> None:
             "/auth/register",
             json={"email": "bob@acme.com", "password": PASSWORD, "display_name": "Bob"},
         )
-        assert (first.status_code, first.json()["role"]) == (201, "admin")
-        assert second.json()["role"] == "operator"
+        assert (first.status_code, second.status_code) == (202, 202)
         assert "password" not in first.text
 
         login = await h.client.post(
@@ -31,7 +30,11 @@ async def test_register_login_me_and_first_user_is_admin() -> None:
         claims = jwt.decode(
             body["access_token"], "s" * 40, algorithms=["HS256"], issuer="brain-agent"
         )
-        assert claims["role"] == "admin"
+        assert claims["role"] == body["user"]["role"] == "admin"
+        bob = await h.client.post(
+            "/auth/login", json={"email": "bob@acme.com", "password": PASSWORD}
+        )
+        assert bob.json()["user"]["role"] == "operator"
 
         me = await h.client.get(
             "/auth/me", headers={"Authorization": f"Bearer {body['access_token']}"}
@@ -39,16 +42,11 @@ async def test_register_login_me_and_first_user_is_admin() -> None:
         assert me.json()["email"] == "ana@acme.com"
 
 
-async def test_duplicate_email_and_weak_password_are_rejected() -> None:
+async def test_weak_password_is_rejected() -> None:
     async with running_api([]) as h:
-        await register(h.client)
-        duplicate = await h.client.post(
-            "/auth/register", json={"email": "ANA@acme.com", "password": PASSWORD}
-        )
         weak = await h.client.post(
             "/auth/register", json={"email": "x@acme.com", "password": "short"}
         )
-        assert duplicate.status_code == 409
         assert weak.status_code == 422
 
 

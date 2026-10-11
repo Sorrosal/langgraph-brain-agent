@@ -1,21 +1,26 @@
 """Conversation threads: create, inspect and drive runs in the background."""
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import datetime
 from typing import Annotated, Any, Literal
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Request
 from langchain_core.messages import AIMessage, BaseMessage, ToolMessage
 from pydantic import BaseModel, Field
 
 from brain_agent.api.auth import Container, CurrentUser
+from brain_agent.api.ratelimit import enforce
 from brain_agent.errors import NotFoundError, ThreadBusyError
 from brain_agent.hitl.models import ApprovalResponse, PendingInterrupt, UncertainResponse
 from brain_agent.persistence.threads import Thread
+from brain_agent.runtime.supervisor import RunSupervisor
 
 router = APIRouter(prefix="/threads", tags=["threads"])
 
 RunStatus = Literal["idle", "running", "interrupted", "failed"]
 TITLE_LENGTH = 80
+RUN_FAILED = "run_failed"
 
 
 class CreateThread(BaseModel):
@@ -64,6 +69,19 @@ class ThreadDetail(ThreadOut):
     approvals: list[dict[str, Any]]
 
 
+class CheckpointOut(BaseModel):
+    checkpoint_id: str
+    step: int
+    created_at: datetime | None
+    source: str
+    """``input`` (user input), ``loop`` (a superstep), ``update`` or ``fork``."""
+    writes: list[str]
+    """Nodes whose execution produced this checkpoint."""
+    next: list[str]
+    """Nodes that run next from it; empty once the run is finished."""
+    message_count: int
+
+
 class RunAccepted(BaseModel):
     run: RunOut
 
@@ -81,11 +99,26 @@ def _message(message: BaseMessage) -> MessageOut | None:
     )
 
 
-async def _owned(container: Container, user: CurrentUser, thread_id: str) -> Thread:
+async def owned_thread(container: Container, user: CurrentUser, thread_id: str) -> Thread:
     thread = await container.threads.get(thread_id, user.id)
     if thread is None:  # also for other users' threads: never leak that the id exists
         raise NotFoundError("thread", thread_id)
     return thread
+
+
+@contextmanager
+def admission(supervisor: RunSupervisor, thread_id: str) -> Iterator[None]:
+    """Hold the thread's run slot while a request validates and schedules its run.
+
+    The slot is taken before any ``await``, so of two concurrent requests only one is admitted;
+    it is released on any failure before the run starts.
+    """
+    supervisor.reserve(thread_id)
+    try:
+        yield
+    except BaseException:
+        supervisor.release(thread_id)
+        raise
 
 
 async def _run_status(container: Container, thread_id: str, interrupted: bool) -> RunOut:
@@ -94,7 +127,7 @@ async def _run_status(container: Container, thread_id: str, interrupted: bool) -
     if container.supervisor.is_running(thread_id) or (record and record.status == "running"):
         return RunOut(status="running")  # a lapsed lease is picked up by the recovery worker
     if record and record.status == "failed":
-        return RunOut(status="failed", error=record.last_error)
+        return RunOut(status="failed", error=RUN_FAILED)  # the ledger keeps the raw text
     if interrupted:
         return RunOut(status="interrupted")
     if failure:
@@ -119,7 +152,7 @@ async def list_threads(
 
 @router.get("/{thread_id}", response_model=ThreadDetail)
 async def get_thread(thread_id: str, container: Container, user: CurrentUser) -> ThreadDetail:
-    thread = await _owned(container, user, thread_id)
+    thread = await owned_thread(container, user, thread_id)
     snapshot = await container.runner.get_state(thread_id)
     values = snapshot.values or {}
     pending = await container.runner.get_pending_interrupt(thread_id)
@@ -134,21 +167,35 @@ async def get_thread(thread_id: str, container: Container, user: CurrentUser) ->
     )
 
 
+@router.get("/{thread_id}/history", response_model=list[CheckpointOut])
+async def get_history(
+    thread_id: str,
+    container: Container,
+    user: CurrentUser,
+    limit: Annotated[int, Query(ge=1, le=200)] = 50,
+) -> list[CheckpointOut]:
+    """Checkpoints of the thread, newest first (the state inspector)."""
+    await owned_thread(container, user, thread_id)
+    history = await container.runner.get_history(thread_id, limit)
+    return [CheckpointOut(**entry) for entry in history]
+
+
 @router.post("/{thread_id}/messages", status_code=202, response_model=RunAccepted)
 async def post_message(
-    thread_id: str, body: SendMessage, container: Container, user: CurrentUser
+    thread_id: str, body: SendMessage, container: Container, user: CurrentUser, request: Request
 ) -> RunAccepted:
-    await _owned(container, user, thread_id)
+    enforce(request, "messages", user.id, container.settings.rate_limit_messages_per_minute, 60)
+    await owned_thread(container, user, thread_id)
     runner = container.runner
-    if container.supervisor.is_running(thread_id):
-        raise ThreadBusyError(thread_id)
-    if await runner.get_pending_interrupt(thread_id) is not None:
-        raise ThreadBusyError(thread_id, approval_pending=True)
-    container.supervisor.start(
-        thread_id, lambda: runner.run(thread_id, body.content, user_id=user.id)
-    )
-    title = " ".join(body.content.split())[:TITLE_LENGTH]
-    await container.threads.touch(thread_id, title_if_empty=title)
+    with admission(container.supervisor, thread_id):
+        if await runner.get_pending_interrupt(thread_id) is not None:
+            raise ThreadBusyError(thread_id, approval_pending=True)
+        title = " ".join(body.content.split())[:TITLE_LENGTH]
+        await container.threads.touch(thread_id, title_if_empty=title)
+        container.supervisor.start(
+            thread_id,
+            lambda sink: runner.run(thread_id, body.content, user_id=user.id, sink=sink),
+        )
     return RunAccepted(run=RunOut(status="running"))
 
 
@@ -156,11 +203,13 @@ async def post_message(
 async def post_approval(
     thread_id: str, body: ApprovalResponse, container: Container, user: CurrentUser
 ) -> RunAccepted:
-    await _owned(container, user, thread_id)
-    await container.runner.validate_approval(thread_id, body)
-    container.supervisor.start(
-        thread_id, lambda: container.runner.approve(thread_id, body, user_id=user.id)
-    )
+    await owned_thread(container, user, thread_id)
+    with admission(container.supervisor, thread_id):
+        await container.runner.validate_approval(thread_id, body)
+        container.supervisor.start(
+            thread_id,
+            lambda sink: container.runner.approve(thread_id, body, user_id=user.id, sink=sink),
+        )
     return RunAccepted(run=RunOut(status="running"))
 
 
@@ -168,10 +217,13 @@ async def post_approval(
 async def post_uncertain(
     thread_id: str, body: UncertainResponse, container: Container, user: CurrentUser
 ) -> RunAccepted:
-    await _owned(container, user, thread_id)
-    await container.runner.validate_uncertain(thread_id, body.decisions)
-    container.supervisor.start(
-        thread_id,
-        lambda: container.runner.resolve_uncertain(thread_id, body.decisions, user_id=user.id),
-    )
+    await owned_thread(container, user, thread_id)
+    with admission(container.supervisor, thread_id):
+        await container.runner.validate_uncertain(thread_id, body.decisions)
+        container.supervisor.start(
+            thread_id,
+            lambda sink: container.runner.resolve_uncertain(
+                thread_id, body.decisions, user_id=user.id, sink=sink
+            ),
+        )
     return RunAccepted(run=RunOut(status="running"))

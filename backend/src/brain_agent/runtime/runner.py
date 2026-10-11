@@ -36,6 +36,7 @@ from brain_agent.hitl.models import (
     UncertainResponse,
 )
 from brain_agent.persistence.runs import RunLedger
+from brain_agent.runtime.events import EventSink, failure_data, translate
 from brain_agent.tools.memory_tools import DEFAULT_USER_ID
 
 logger = structlog.get_logger(__name__)
@@ -138,7 +139,12 @@ class AgentRunner:
         return self._owner_id
 
     async def run(
-        self, thread_id: str, message: str, *, user_id: str = DEFAULT_USER_ID
+        self,
+        thread_id: str,
+        message: str,
+        *,
+        user_id: str = DEFAULT_USER_ID,
+        sink: EventSink | None = None,
     ) -> RunResult:
         """Send a user message on ``thread_id`` and run the agent until it stops.
 
@@ -157,8 +163,8 @@ class AgentRunner:
             await self._abandon_failed_work(thread_id, config, pending, record.last_error)
         # A new user message starts a new run, so the step budget starts again.
         update: AgentState = {"messages": [HumanMessage(content=message)], "step_count": 0}
-        token = await self._execute(thread_id, update, user_id, reset_attempts=True)
-        return await self._finish(thread_id, token)
+        token = await self._execute(thread_id, update, user_id, reset_attempts=True, sink=sink)
+        return await self._finish(thread_id, token, sink)
 
     async def _abandon_failed_work(
         self,
@@ -184,22 +190,29 @@ class AgentRunner:
         logger.warning("failed_run_abandoned", thread_id=thread_id, closed_tool_calls=len(closing))
         await self._graph.aupdate_state(config, {"messages": closing}, as_node=TOOLS_NODE)
 
-    async def resume(self, thread_id: str, *, user_id: str = DEFAULT_USER_ID) -> RunResult:
+    async def resume(
+        self, thread_id: str, *, user_id: str = DEFAULT_USER_ID, sink: EventSink | None = None
+    ) -> RunResult:
         """Continue an unfinished run from its last checkpoint; no-op if nothing is pending."""
         config = _thread_config(thread_id)
         snapshot = await self._graph.aget_state(config)
         if _pending_interrupt(snapshot) is not None:
             # Waiting for a human, not crashed: resuming blindly would skip the decision.
             # A row still marked running (crash after the pause) is closed as interrupted.
-            return await self._finish(thread_id, await self._reclaim_stale_row(thread_id))
+            return await self._finish(thread_id, await self._reclaim_stale_row(thread_id), sink)
         if snapshot.next:
-            token = await self._execute(thread_id, None, user_id, reset_attempts=False)
+            token = await self._execute(thread_id, None, user_id, reset_attempts=False, sink=sink)
         else:
             token = await self._reclaim_stale_row(thread_id)
-        return await self._finish(thread_id, token)
+        return await self._finish(thread_id, token, sink)
 
     async def approve(
-        self, thread_id: str, response: ApprovalResponse, *, user_id: str = DEFAULT_USER_ID
+        self,
+        thread_id: str,
+        response: ApprovalResponse,
+        *,
+        user_id: str = DEFAULT_USER_ID,
+        sink: EventSink | None = None,
     ) -> RunResult:
         """Apply the human decisions to the paused approval and continue the run.
 
@@ -217,7 +230,7 @@ class AgentRunner:
             response.ensure_covers(pending.actions)
             return Command(resume=response.model_dump())
 
-        return await self._resume_paused(thread_id, ApprovalInterrupt, command, user_id)
+        return await self._resume_paused(thread_id, ApprovalInterrupt, command, user_id, sink)
 
     async def resolve_uncertain(
         self,
@@ -225,6 +238,7 @@ class AgentRunner:
         decisions: Mapping[str, ConfirmDone | Retry | Skip],
         *,
         user_id: str = DEFAULT_USER_ID,
+        sink: EventSink | None = None,
     ) -> RunResult:
         """Answer the paused uncertain tool executions, one decision per action id.
 
@@ -240,6 +254,7 @@ class AgentRunner:
             UncertainExecutionInterrupt,
             lambda pending: _uncertain_command(pending, decisions),
             user_id,
+            sink,
         )
 
     async def validate_approval(self, thread_id: str, response: ApprovalResponse) -> None:
@@ -269,6 +284,7 @@ class AgentRunner:
         kind: type[Pending],
         build_command: Callable[[Pending], Command[Any]],
         user_id: str,
+        sink: EventSink | None,
     ) -> RunResult:
         async def prepare() -> Command[Any]:
             pending = _pending_interrupt(await self.get_state(thread_id))
@@ -276,8 +292,8 @@ class AgentRunner:
                 raise NoPendingApprovalError(thread_id)
             return build_command(pending)
 
-        token = await self._execute(thread_id, prepare, user_id, reset_attempts=True)
-        return await self._finish(thread_id, token)
+        token = await self._execute(thread_id, prepare, user_id, reset_attempts=True, sink=sink)
+        return await self._finish(thread_id, token, sink)
 
     async def get_pending_interrupt(self, thread_id: str) -> PendingInterrupt | None:
         """Return whatever the thread is paused on (approval or uncertain execution), if any."""
@@ -299,6 +315,31 @@ class AgentRunner:
             thread_id, self._owner_id, self._lease_seconds, reset_attempts=False
         )
 
+    async def get_history(self, thread_id: str, limit: int) -> list[dict[str, Any]]:
+        """Checkpoints of ``thread_id``, newest first, as plain dictionaries.
+
+        ``writes`` names the nodes that produced a checkpoint: they are the ``next`` nodes of
+        the checkpoint before it (one more is read to know the oldest one's predecessor).
+        """
+        config = _thread_config(thread_id)
+        snapshots = [s async for s in self._graph.aget_state_history(config, limit=limit + 1)]
+        entries = []
+        for index, snapshot in enumerate(snapshots[:limit]):
+            older = snapshots[index + 1] if index + 1 < len(snapshots) else None
+            metadata = snapshot.metadata or {}
+            entries.append(
+                {
+                    "checkpoint_id": snapshot.config["configurable"]["checkpoint_id"],
+                    "step": metadata.get("step", -1),
+                    "created_at": snapshot.created_at,
+                    "source": metadata.get("source", "unknown"),
+                    "writes": list(older.next) if older else [],
+                    "next": list(snapshot.next),
+                    "message_count": len((snapshot.values or {}).get("messages", [])),
+                }
+            )
+        return entries
+
     async def get_state(self, thread_id: str) -> StateSnapshot:
         """Return the latest checkpointed state of ``thread_id``."""
         return await self._graph.aget_state(_thread_config(thread_id))
@@ -310,6 +351,7 @@ class AgentRunner:
         user_id: str,
         *,
         reset_attempts: bool,
+        sink: EventSink | None = None,
     ) -> int | None:
         """Run the graph under a lease; return the fencing token (``None`` without a registry).
 
@@ -337,9 +379,13 @@ class AgentRunner:
                         await self._release(runs, thread_id, token, prior.status if prior else None)
                     raise
             if runs is None or token is None:
-                await self._graph.ainvoke(graph_input, config, durability="sync")
+                try:
+                    await self._drive(graph_input, config, sink)
+                except Exception as exc:
+                    _emit(sink, "run_failed", failure_data(exc))
+                    raise
                 return None
-            return await self._execute_leased(runs, thread_id, token, graph_input, config)
+            return await self._execute_leased(runs, thread_id, token, graph_input, config, sink)
         finally:
             self._active.discard(thread_id)
 
@@ -359,11 +405,10 @@ class AgentRunner:
         token: int,
         graph_input: AgentState | Command[Any] | None,
         config: RunnableConfig,
+        sink: EventSink | None,
     ) -> int:
         lost = asyncio.Event()
-        graph_task = asyncio.ensure_future(
-            self._graph.ainvoke(graph_input, config, durability="sync")
-        )
+        graph_task = asyncio.ensure_future(self._drive(graph_input, config, sink))
         heartbeat = asyncio.create_task(
             self._heartbeat_loop(runs, thread_id, token, lost, graph_task)
         )
@@ -371,10 +416,12 @@ class AgentRunner:
             await graph_task
         except asyncio.CancelledError:
             if lost.is_set():
+                _emit(sink, "run_failed", failure_data(LeaseLostError(thread_id)))
                 raise LeaseLostError(thread_id) from None
             raise
         except Exception as exc:
             await self._record_failure(runs, thread_id, token, exc)
+            _emit(sink, "run_failed", failure_data(exc))
             raise
         finally:
             heartbeat.cancel()
@@ -382,13 +429,33 @@ class AgentRunner:
                 await heartbeat
         return token
 
+    async def _drive(
+        self,
+        graph_input: AgentState | Command[Any] | None,
+        config: RunnableConfig,
+        sink: EventSink | None,
+    ) -> None:
+        """Execute the graph; with a ``sink`` its progress is streamed as domain events."""
+        if sink is None:
+            await self._graph.ainvoke(graph_input, config, durability="sync")
+            return
+        async for mode, data in self._graph.astream(
+            graph_input,
+            config,
+            stream_mode=["messages", "updates"],
+            durability="sync",
+            subgraphs=False,
+        ):
+            for kind, payload in translate(mode, data):
+                _emit(sink, kind, payload)
+
     async def _heartbeat_loop(
         self,
         runs: RunLedger,
         thread_id: str,
         token: int,
         lost: asyncio.Event,
-        graph_task: asyncio.Future[object],
+        graph_task: asyncio.Future[Any],
     ) -> None:
         log = logger.bind(thread_id=thread_id, owner=self._owner_id)
         while True:
@@ -420,14 +487,18 @@ class AgentRunner:
             # Never mask the graph's own error; the lease will expire and recovery decides.
             logger.warning("run_failure_not_recorded", thread_id=thread_id, exc_info=True)
 
-    async def _finish(self, thread_id: str, token: int | None) -> RunResult:
+    async def _finish(
+        self, thread_id: str, token: int | None, sink: EventSink | None = None
+    ) -> RunResult:
         result = await self._result(thread_id)
         if self._runs is not None and token is not None:
             finished = await self._runs.mark_finished(
                 thread_id, self._owner_id, token, result.status
             )
             if not finished:
+                _emit(sink, "run_failed", failure_data(LeaseLostError(thread_id)))
                 raise LeaseLostError(thread_id)
+        _emit(sink, "run_completed", {"status": result.status})
         return result
 
     async def _result(self, thread_id: str) -> RunResult:
@@ -442,6 +513,11 @@ class AgentRunner:
             pending_approval=approval if isinstance(approval, ApprovalInterrupt) else None,
             pending_interrupt=approval,
         )
+
+
+def _emit(sink: EventSink | None, kind: str, data: dict[str, Any]) -> None:
+    if sink is not None:
+        sink(kind, data)
 
 
 def _uncertain_command(

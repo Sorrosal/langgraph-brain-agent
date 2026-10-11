@@ -176,10 +176,10 @@ async def test_supervisor_allows_one_task_per_thread_and_cancels_on_shutdown() -
         started.set()
         await asyncio.Event().wait()
 
-    supervisor.start("t", forever)
+    supervisor.start("t", lambda sink: forever())
     await started.wait()
     with pytest.raises(ThreadBusyError):
-        supervisor.start("t", forever)
+        supervisor.start("t", lambda sink: forever())
     assert supervisor.is_running("t")
     await supervisor.shutdown()
     assert not supervisor.is_running("t")
