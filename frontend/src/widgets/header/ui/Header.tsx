@@ -22,7 +22,7 @@ interface HeaderProps {
 
 export function Header({ theme, onThemeToggle }: HeaderProps) {
   const { user } = useAuthStore();
-  const { mutate: logout } = useLogout();
+  const logout = useLogout();
   const navigate = useNavigate();
 
   return (
@@ -43,18 +43,18 @@ export function Header({ theme, onThemeToggle }: HeaderProps) {
                 aria-label="User menu"
               >
                 <UserAvatar user={user} size="sm" />
-                <span className="hidden text-sm font-medium sm:block">{user.name}</span>
+                <span className="hidden text-sm font-medium sm:block">{user.display_name}</span>
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-48">
               <DropdownMenuLabel className="font-normal">
                 <div className="flex flex-col gap-0.5">
-                  <p className="text-sm font-semibold">{user.name}</p>
+                  <p className="text-sm font-semibold">{user.display_name}</p>
                   <p className="text-muted-foreground text-xs">{user.email}</p>
                 </div>
               </DropdownMenuLabel>
               <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={() => void navigate('/settings')}>
+              <DropdownMenuItem onClick={() => void navigate('/app/settings')}>
                 <Settings className="mr-2 h-4 w-4" />
                 Settings
               </DropdownMenuItem>

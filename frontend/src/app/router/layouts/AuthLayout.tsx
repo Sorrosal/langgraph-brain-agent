@@ -1,4 +1,5 @@
 import { Zap } from 'lucide-react';
+import { env } from '@/shared/config/env';
 import { Outlet } from 'react-router-dom';
 
 export function AuthLayout() {
@@ -8,16 +9,12 @@ export function AuthLayout() {
       <div className="bg-primary text-primary-foreground hidden flex-col justify-between p-10 lg:flex lg:w-1/2">
         <div className="flex items-center gap-2">
           <Zap className="h-7 w-7" />
-          <span className="text-xl font-bold">React Spark</span>
+          <span className="text-xl font-bold">{env.VITE_APP_NAME}</span>
         </div>
         <div>
-          <blockquote className="space-y-2">
-            <p className="text-lg leading-relaxed">
-              &ldquo;A professional template built with Feature-Sliced Design, React 19, and the
-              best tools in the ecosystem.&rdquo;
-            </p>
-            <footer className="text-sm opacity-80">— React Spark Template</footer>
-          </blockquote>
+          <p className="text-lg leading-relaxed">
+            An agent that reasons, uses tools and asks for your approval before it acts.
+          </p>
         </div>
       </div>
 

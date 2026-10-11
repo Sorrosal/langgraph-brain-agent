@@ -1,15 +1,7 @@
-import {
-  BarChart3,
-  ChevronLeft,
-  ChevronRight,
-  Home,
-  LayoutDashboard,
-  LogOut,
-  Settings,
-  Zap,
-} from 'lucide-react';
+import { ChevronLeft, ChevronRight, LogOut, MessageSquare, Settings, Zap } from 'lucide-react';
 import { NavLink } from 'react-router-dom';
 import { useLogout } from '@/features/auth';
+import { env } from '@/shared/config/env';
 import { Button } from '@/shared/ui/button';
 import { Separator } from '@/shared/ui/separator';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/shared/ui/tooltip';
@@ -24,16 +16,14 @@ interface NavItem {
 }
 
 const navItems: NavItem[] = [
-  { to: '/', icon: Home, label: 'Home' },
-  { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
-  { to: '/analytics', icon: BarChart3, label: 'Analytics' },
-  { to: '/settings', icon: Settings, label: 'Settings' },
+  { to: '/app/chat', icon: MessageSquare, label: 'Chat' },
+  { to: '/app/settings', icon: Settings, label: 'Settings' },
 ];
 
 export function Sidebar() {
   const { isCollapsed, toggle } = useSidebarStore();
   const isMobile = useMediaQuery('(max-width: 768px)');
-  const { mutate: logout } = useLogout();
+  const logout = useLogout();
 
   if (isMobile) return null;
 
@@ -48,7 +38,7 @@ export function Sidebar() {
       <div className="flex h-14 items-center px-4">
         <div className="flex items-center gap-2">
           <Zap className="text-primary h-6 w-6 shrink-0" />
-          {!isCollapsed && <span className="truncate font-bold">React Spark</span>}
+          {!isCollapsed && <span className="truncate font-bold">{env.VITE_APP_NAME}</span>}
         </div>
       </div>
 
@@ -65,7 +55,6 @@ export function Sidebar() {
                     <TooltipTrigger asChild>
                       <NavLink
                         to={item.to}
-                        end={item.to === '/'}
                         className={({ isActive }) =>
                           cn(
                             'flex h-9 w-9 items-center justify-center rounded-md transition-colors',
@@ -84,7 +73,6 @@ export function Sidebar() {
                 ) : (
                   <NavLink
                     to={item.to}
-                    end={item.to === '/'}
                     className={({ isActive }) =>
                       cn(
                         'flex h-9 items-center gap-3 rounded-md px-3 text-sm transition-colors',

@@ -13,7 +13,7 @@ export default function NotFoundPage() {
       <Button asChild>
         <Link to="/">
           <ArrowLeft className="mr-2 h-4 w-4" />
-          Back to home
+          Back to the app
         </Link>
       </Button>
     </div>
