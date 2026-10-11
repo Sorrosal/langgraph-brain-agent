@@ -18,6 +18,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PATH="/app/.venv/bin:$PATH" \
     RULES_DIR=/app/rules \
     FORWARDED_ALLOW_IPS=127.0.0.1
+# FORWARDED_ALLOW_IPS lists the proxies whose X-Forwarded-For is trusted (the rate limiter keys on
+# it). Loopback by default; set it to the reverse proxy's address or CIDR at run time, otherwise
+# every client looks like the proxy.
 RUN useradd --system --uid 10001 --user-group --home-dir /app --no-create-home app
 WORKDIR /app
 COPY --from=builder /app/.venv /app/.venv

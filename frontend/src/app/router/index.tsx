@@ -4,6 +4,7 @@ import { env } from '@/shared/config/env';
 import { useTheme } from '@/app/providers/ThemeProvider';
 import { ThemeToggle } from '@/widgets/theme-toggle';
 import { Skeleton } from '@/shared/ui/skeleton';
+import { RouteError } from '@/shared/ui/route-error';
 import { AuthGuard } from './guards/AuthGuard';
 import { AppLayout } from './layouts/AppLayout';
 import { AuthLayout } from './layouts/AuthLayout';
@@ -82,6 +83,7 @@ export function createRoutes(landingOnly: boolean): RouteObject[] {
   return [
     {
       element: <RootLayout />,
+      errorElement: <RouteError />,
       children: [landingRoute, ...(landingOnly ? [] : appRoutes), notFoundRoute],
     },
   ];

@@ -9,7 +9,9 @@
 #   POSTGRES_PASSWORD required, also used in DATABASE_URL below
 #   DATABASE_URL      required, e.g. postgresql://brain:<POSTGRES_PASSWORD>@postgres:5432/brain
 #   CORS_ORIGINS      optional JSON list; not needed behind the same-origin /api proxy
-#   FORWARDED_ALLOW_IPS optional, proxy IPs trusted for X-Forwarded-* (the nginx container)
+#   FORWARDED_ALLOW_IPS optional; defaults to the compose network subnet (172.28.0.0/16) so the
+#                     backend trusts X-Forwarded-For from the nginx container. Set it to your
+#                     proxy address if you put another reverse proxy in front of nginx.
 #   TAG               optional image tag when pulling published images (default: latest)
 # Other backend settings (SMTP_*, IMAP_*, OTEL_*, ...) are read from the same file.
 
@@ -20,6 +22,7 @@ services:
       POSTGRES_DB: brain
       POSTGRES_USER: brain
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    networks: [internal]
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -35,8 +38,11 @@ services:
       context: .
       dockerfile: backend/Dockerfile
     env_file: .env
+    stop_grace_period: 30s
+    networks: [internal]
     environment:
       ENVIRONMENT: production
+      FORWARDED_ALLOW_IPS: ${FORWARDED_ALLOW_IPS:-172.28.0.0/16}
     depends_on:
       postgres:
         condition: service_healthy
@@ -52,7 +58,14 @@ services:
       - backend
     ports:
       - "8080:8080"
+    networks: [internal]
     restart: unless-stopped
+
+networks:
+  internal:
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
 
 volumes:
   postgres_data:
