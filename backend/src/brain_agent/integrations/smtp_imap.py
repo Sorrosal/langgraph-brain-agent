@@ -104,6 +104,14 @@ def parse_message(uid: str, raw: bytes) -> EmailMessage:
     )
 
 
+def _rejected(exc: Exception) -> bool:
+    """Whether the server explicitly refused the message (so it was not sent), as opposed to a
+    timeout or dropped connection after which delivery may or may not have happened."""
+    if isinstance(exc, smtplib.SMTPDataError):
+        return exc.smtp_code >= 400
+    return isinstance(exc, smtplib.SMTPRecipientsRefused | smtplib.SMTPSenderRefused)
+
+
 class SmtpImapEmailGateway:
     """Sends over SMTP and reads the INBOX over IMAP; the "sent" folder is the local outbox
     table (when a pool-backed ``outbox`` is given) that also keeps a copy of every send."""
@@ -147,6 +155,7 @@ class SmtpImapEmailGateway:
             message["References"] = email.reply_to_message_id
         message.set_content(email.body_text)
         recipients = list(dict.fromkeys([*email.to, *email.cc]))
+        transmitting = False  # set once the server may have received the message
         try:
             assert s.smtp_host is not None
             if s.smtp_security == "ssl":
@@ -163,9 +172,13 @@ class SmtpImapEmailGateway:
                     client.starttls(context=ssl.create_default_context())
                 if s.smtp_username and s.smtp_password:
                     client.login(s.smtp_username, s.smtp_password.get_secret_value())
+                transmitting = True
                 client.send_message(message, from_addr=_address(s.email_from), to_addrs=recipients)
         except (smtplib.SMTPException, OSError) as exc:
-            raise IntegrationError(f"SMTP send failed ({type(exc).__name__})") from exc
+            raise IntegrationError(
+                f"SMTP send failed ({type(exc).__name__})",
+                outcome_unknown=transmitting and not _rejected(exc),
+            ) from exc
 
     # --- reading ---------------------------------------------------------------------------
 

@@ -58,7 +58,12 @@ def build_email_tools(gateway: EmailGateway) -> list[BaseTool]:
             email = OutgoingEmail(to=to, cc=cc or [], subject=subject, body_text=body)
         except ValidationError as exc:
             raise ToolException(f"Invalid email: {exc.errors()[0]['msg']}") from exc
-        result = await gateway.send(email, idempotency_key=idempotency_key_or_new())
+        try:
+            result = await gateway.send(email, idempotency_key=idempotency_key_or_new())
+        except IntegrationError as exc:
+            if exc.outcome_unknown:  # may have been sent: the ledger asks a human
+                raise
+            raise ToolException(str(exc)) from exc
         return to_json(
             {
                 "id": result.id,

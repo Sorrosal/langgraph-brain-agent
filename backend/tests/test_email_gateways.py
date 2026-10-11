@@ -3,6 +3,7 @@ IMAP against a fake ``imaplib.IMAP4_SSL``, and settings validation."""
 
 import hashlib
 import imaplib
+import smtplib
 import socket
 from collections.abc import AsyncIterator, Iterator
 from email import message_from_bytes
@@ -214,6 +215,78 @@ async def test_smtp_failure_is_a_typed_error_without_secrets() -> None:
         await SmtpImapEmailGateway(settings).send(_mail(), idempotency_key="k")
 
     assert "hunter2" not in str(caught.value)
+    assert caught.value.outcome_unknown is False  # nothing was transmitted
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [
+        smtplib.SMTPServerDisconnected("connection lost"),
+        TimeoutError("timed out"),
+        smtplib.SMTPDataError(250, b"weird"),
+    ],
+    ids=["disconnected", "timeout", "odd-data-reply"],
+)
+async def test_smtp_failure_during_transmission_has_an_unknown_outcome(
+    smtp_server: tuple[int, Inbox], monkeypatch: pytest.MonkeyPatch, failure: Exception
+) -> None:
+    def broken(*_: Any, **__: Any) -> None:
+        raise failure
+
+    monkeypatch.setattr(smtplib.SMTP, "sendmail", broken)
+    gateway = SmtpImapEmailGateway(_smtp_settings(smtp_server[0]))
+
+    with pytest.raises(IntegrationError) as caught:
+        await gateway.send(_mail(), idempotency_key="k")
+
+    assert caught.value.outcome_unknown is True
+    assert type(failure).__name__ in str(caught.value)
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [
+        smtplib.SMTPRecipientsRefused({"bob@acme.com": (550, b"no")}),
+        smtplib.SMTPSenderRefused(550, b"no", FROM),
+        smtplib.SMTPDataError(554, b"rejected"),
+        smtplib.SMTPDataError(451, b"try later"),
+    ],
+    ids=["rcpt", "sender", "data-5xx", "data-4xx"],
+)
+async def test_smtp_rejection_by_the_server_is_a_definite_failure(
+    smtp_server: tuple[int, Inbox], monkeypatch: pytest.MonkeyPatch, failure: Exception
+) -> None:
+    def refuse(*_: Any, **__: Any) -> None:
+        raise failure
+
+    monkeypatch.setattr(smtplib.SMTP, "sendmail", refuse)
+    gateway = SmtpImapEmailGateway(_smtp_settings(smtp_server[0]))
+
+    with pytest.raises(IntegrationError) as caught:
+        await gateway.send(_mail(), idempotency_key="k")
+
+    assert caught.value.outcome_unknown is False
+
+
+async def test_smtp_recipient_refused_by_a_real_server_is_definite() -> None:
+    class Refusing:
+        async def handle_RCPT(  # noqa: N802
+            self, server: SMTP, session: Session, envelope: Envelope, address: str, opts: Any
+        ) -> str:
+            return "550 no such user"
+
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        port = probe.getsockname()[1]
+    controller = Controller(Refusing(), hostname="127.0.0.1", port=port)
+    controller.start()
+    try:
+        with pytest.raises(IntegrationError) as caught:
+            await SmtpImapEmailGateway(_smtp_settings(port)).send(_mail(), idempotency_key="k")
+    finally:
+        controller.stop()
+
+    assert caught.value.outcome_unknown is False
 
 
 # --- IMAP with a fake client --------------------------------------------------------------

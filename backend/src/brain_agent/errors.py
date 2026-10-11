@@ -70,4 +70,12 @@ class NotFoundError(BrainAgentError):
 
 
 class IntegrationError(BrainAgentError):
-    """Raised when an external provider (SMTP, IMAP, ...) fails. Messages never hold secrets."""
+    """Raised when an external provider (SMTP, IMAP, ...) fails. Messages never hold secrets.
+
+    ``outcome_unknown`` is set when the side effect may have happened despite the failure (a
+    timeout after the message was handed over), so retrying could repeat it.
+    """
+
+    def __init__(self, message: str, *, outcome_unknown: bool = False) -> None:
+        self.outcome_unknown = outcome_unknown
+        super().__init__(message)

@@ -10,6 +10,7 @@ from langgraph.checkpoint.memory import InMemorySaver
 
 from brain_agent.brain.rules import RulesEngine, load_rules
 from brain_agent.config import REPO_ROOT
+from brain_agent.errors import IntegrationError
 from brain_agent.graph.builder import build_graph
 from brain_agent.hitl.models import ApprovalResponse, ConfirmDone, UncertainExecutionInterrupt
 from brain_agent.integrations.memory import (
@@ -198,6 +199,50 @@ async def test_unsafe_gateway_crash_mid_send_escalates_to_a_human() -> None:
     assert await _sent(gateway) == 0
     done = await runner.resolve_uncertain(THREAD, {"c1": ConfirmDone()})
     assert done.status == "completed" and await _sent(gateway) == 0
+
+
+class FailingGateway(InMemoryEmailGateway):
+    """Not retry-safe; ``send`` always raises, with or without an unknown outcome."""
+
+    retry_safe = False
+
+    def __init__(self, *, outcome_unknown: bool) -> None:
+        super().__init__()
+        self.attempts = 0
+        self._unknown = outcome_unknown
+
+    async def send(self, email: Any, *, idempotency_key: str) -> Any:
+        self.attempts += 1
+        raise IntegrationError("SMTP send failed (boom)", outcome_unknown=self._unknown)
+
+
+async def test_ambiguous_send_failure_pauses_for_a_human_and_is_not_resent() -> None:
+    gateway, ledger = FailingGateway(outcome_unknown=True), InMemoryToolLedger()
+    runner = _runner(gateway, _args(), ledger)
+
+    paused = await runner.run(THREAD, "mail")
+
+    assert paused.status == "interrupted"
+    assert isinstance(paused.pending_interrupt, UncertainExecutionInterrupt)
+    record = await ledger.get(f"{THREAD}:c1")
+    assert record is not None and record.status == "started"
+    done = await runner.resolve_uncertain(THREAD, {"c1": ConfirmDone()})
+    assert done.status == "completed"
+    assert gateway.attempts == 1 and await _sent(gateway) == 0
+
+
+async def test_definite_send_failure_is_recorded_failed_and_surfaced_as_a_tool_error() -> None:
+    gateway, ledger = FailingGateway(outcome_unknown=False), InMemoryToolLedger()
+    runner = _runner(gateway, _args(), ledger)
+
+    result = await runner.run(THREAD, "mail")
+
+    assert result.status == "completed"
+    record = await ledger.get(f"{THREAD}:c1")
+    assert record is not None and record.status == "failed"
+    messages = (await runner.get_state(THREAD)).values["messages"]
+    [error] = [m for m in messages if isinstance(m, ToolMessage)]
+    assert error.status == "error" and "SMTP send failed" in error.text
 
 
 async def test_retry_safe_gateway_crash_mid_send_retries_under_the_same_key() -> None:
