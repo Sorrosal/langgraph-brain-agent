@@ -26,6 +26,8 @@ from brain_agent.hitl.models import Risk
 logger = structlog.get_logger(__name__)
 
 RuleAction = Literal["require_approval", "block"]
+RULE_FILENAME = r"^[a-z0-9-]+\.yaml$"
+MAX_RULES_BYTES = 200_000
 _MISSING = object()
 
 

@@ -118,7 +118,6 @@ def create_app(
     app.state.limiter = RateLimiter(max_buckets=settings.rate_limit_max_buckets)
     app.state.shutdown = asyncio.Event()
     app.state.hash_gate = asyncio.Semaphore(settings.auth_hash_concurrency)
-    app.state.rules_lock = asyncio.Lock()
     app.state.recovery_loop = None
     # Innermost first: the error catcher needs the request id, and 500s must pass through CORS.
     app.add_middleware(UnhandledErrorMiddleware)

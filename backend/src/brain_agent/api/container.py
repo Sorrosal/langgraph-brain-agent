@@ -1,8 +1,9 @@
 """Composition root: wires persistence, rules, tools, model, graph and runtime into one object."""
 
+import asyncio
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from langchain_core.language_models import BaseChatModel
@@ -29,6 +30,7 @@ from brain_agent.runtime.recovery import RecoveryWorker
 from brain_agent.runtime.runner import AgentRunner, RunResult
 from brain_agent.runtime.supervisor import RunSupervisor
 from brain_agent.tools.registry import build_business_tools
+from brain_agent.tools.rules_tools import build_rules_tools
 
 Ping = Callable[[], Awaitable[None]]
 
@@ -52,6 +54,8 @@ class AppContainer:
     ping: Ping
     """Raises when the database is unreachable."""
     recovery: RecoveryWorker | None = None
+    rules_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    """Serialises rule file writes from the API and the agent."""
 
 
 ContainerFactory = Callable[[Settings], AbstractAsyncContextManager[AppContainer]]
@@ -101,9 +105,11 @@ def assemble_container(
     Raises ``RulesError`` when the rules cannot be loaded: the service never starts without them.
     """
     rules = RulesEngine.from_source(YamlRuleSource(settings.rules_dir))
+    rules_lock = asyncio.Lock()
+    rules_tools = build_rules_tools(settings.rules_dir, rules, users, rules_lock)
     graph = build_graph(
         model,
-        build_business_tools(crm, tasks, email=email),
+        build_business_tools(crm, tasks, email=email, extra=rules_tools),
         checkpointer=checkpointer,
         store=store,
         tool_ledger=tool_ledger,
@@ -131,6 +137,7 @@ def assemble_container(
         email=email,
         ping=ping,
         recovery=RecoveryWorker(_OwnerAwareResumer(runner, threads, events), runs),
+        rules_lock=rules_lock,
     )
 
 

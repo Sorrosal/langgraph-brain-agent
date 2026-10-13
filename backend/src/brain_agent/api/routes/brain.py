@@ -12,15 +12,18 @@ from brain_agent.api.auth import AdminUser, Container, CurrentUser
 from brain_agent.api.errors import ApiError
 from brain_agent.api.ratelimit import enforce
 from brain_agent.brain.memory import MemoryKind, MemoryRecord
-from brain_agent.brain.rules import RulesError, validate_candidate, write_rule_file
+from brain_agent.brain.rules import (
+    MAX_RULES_BYTES,
+    RULE_FILENAME,
+    RulesError,
+    validate_candidate,
+    write_rule_file,
+)
 from brain_agent.errors import NotFoundError
 
 logger = structlog.get_logger(__name__)
 
 router = APIRouter(tags=["brain"])
-
-RULE_FILENAME = r"^[a-z0-9-]+\.yaml$"
-MAX_RULES_BYTES = 200_000
 
 
 class MemoryIn(BaseModel):
@@ -135,7 +138,7 @@ async def put_rule(
     anything is written, and the file is swapped atomically."""
     enforce(request, "rules", admin.id, container.settings.rate_limit_rules_writes_per_minute, 60)
     directory = container.settings.rules_dir
-    async with request.app.state.rules_lock:
+    async with container.rules_lock:
         try:
             await asyncio.to_thread(validate_candidate, directory, filename, body.content)
         except RulesError as exc:
