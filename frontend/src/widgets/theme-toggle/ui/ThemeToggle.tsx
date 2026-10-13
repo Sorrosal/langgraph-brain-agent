@@ -1,4 +1,5 @@
 import { Moon, Sun } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { Button } from '@/shared/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/shared/ui/tooltip';
 
@@ -8,6 +9,9 @@ interface ThemeToggleProps {
 }
 
 export function ThemeToggle({ theme, onToggle }: ThemeToggleProps) {
+  const { t } = useTranslation();
+  const label = theme === 'light' ? t('theme.toDark') : t('theme.toLight');
+
   return (
     <TooltipProvider delayDuration={0}>
       <Tooltip>
@@ -15,13 +19,14 @@ export function ThemeToggle({ theme, onToggle }: ThemeToggleProps) {
           <Button
             variant="ghost"
             size="icon"
+            className="max-md:size-11 [&_svg]:size-5"
             onClick={onToggle}
-            aria-label={theme === 'light' ? 'Switch to dark mode' : 'Switch to light mode'}
+            aria-label={label}
           >
-            {theme === 'light' ? <Moon className="h-5 w-5" /> : <Sun className="h-5 w-5" />}
+            {theme === 'light' ? <Moon /> : <Sun />}
           </Button>
         </TooltipTrigger>
-        <TooltipContent>{theme === 'light' ? 'Dark mode' : 'Light mode'}</TooltipContent>
+        <TooltipContent>{label}</TooltipContent>
       </Tooltip>
     </TooltipProvider>
   );

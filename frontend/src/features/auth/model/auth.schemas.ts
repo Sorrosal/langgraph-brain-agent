@@ -1,28 +1,41 @@
 import { z } from 'zod';
 import { userSchema } from '@/entities/user';
 
-const MIN_PASSWORD_LENGTH = 10;
+export const MIN_PASSWORD_LENGTH = 10;
+const MAX_PASSWORD_LENGTH = 128;
+const MAX_NAME_LENGTH = 100;
+
+/**
+ * Interpolation values for the validation messages. The schemas carry translation keys, not
+ * text, so the message follows the language active when the error is shown, not when it was raised.
+ */
+export const VALIDATION_LIMITS = {
+  min: MIN_PASSWORD_LENGTH,
+  passwordMax: MAX_PASSWORD_LENGTH,
+  nameMax: MAX_NAME_LENGTH,
+};
 
 export const loginSchema = z.object({
-  email: z.email('Please enter a valid email address'),
-  password: z.string().min(1, 'Password is required'),
+  email: z.email('auth:validation.email'),
+  password: z.string().min(1, 'auth:validation.passwordRequired'),
 });
 
 export const registerSchema = z
   .object({
-    display_name: z.string().trim().min(1, 'Name is required').max(100),
-    email: z.email('Please enter a valid email address'),
+    display_name: z
+      .string()
+      .trim()
+      .min(1, 'auth:validation.nameRequired')
+      .max(MAX_NAME_LENGTH, 'auth:validation.nameMax'),
+    email: z.email('auth:validation.email'),
     password: z
       .string()
-      .min(
-        MIN_PASSWORD_LENGTH,
-        `Password must be at least ${String(MIN_PASSWORD_LENGTH)} characters`,
-      )
-      .max(128),
+      .min(MIN_PASSWORD_LENGTH, 'auth:validation.passwordMin')
+      .max(MAX_PASSWORD_LENGTH, 'auth:validation.passwordMax'),
     confirmPassword: z.string(),
   })
   .refine((data) => data.password === data.confirmPassword, {
-    message: "Passwords don't match",
+    message: 'auth:validation.passwordMismatch',
     path: ['confirmPassword'],
   });
 

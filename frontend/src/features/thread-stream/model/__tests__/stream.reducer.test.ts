@@ -80,14 +80,27 @@ describe('streamReducer', () => {
       [ev(5, 'token', { text: 'Done' }), ev(6, 'run_completed', { status: 'completed' })],
       state,
     );
+    // The streamed text stays until the persisted thread catches up, then `settle` clears it.
     expect(state).toMatchObject({
       runStatus: 'idle',
-      streamingText: '',
+      streamingText: 'Done',
+      settled: true,
       activeNode: null,
-      toolActivity: [],
       pendingInterrupt: null,
       lastEventId: 6,
     });
+    expect(streamReducer(state, { type: 'settle' })).toMatchObject({
+      runStatus: 'idle',
+      streamingText: '',
+      toolActivity: [],
+      settled: false,
+      lastEventId: 6,
+    });
+  });
+
+  it('settle is a no-op while a run is still streaming', () => {
+    const state = run([ev(1, 'token', { text: 'partial' })]);
+    expect(streamReducer(state, { type: 'settle' })).toBe(state);
   });
 
   it('starts a fresh text segment after the reason node closes one', () => {

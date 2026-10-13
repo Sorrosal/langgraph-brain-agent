@@ -1,6 +1,7 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import './app/styles/globals.css';
+import './shared/i18n';
 import { AppProvider } from './app/providers/AppProvider';
 import { connectApiToSession } from './app/providers/api-bridge';
 import { env } from './shared/config/env';

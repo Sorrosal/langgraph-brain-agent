@@ -1,4 +1,5 @@
 import { screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { api } from '@/shared/api/axios-instance';
 import { renderWithProviders } from '@/test/render';
@@ -12,8 +13,8 @@ const pending = [
     interrupt: {
       kind: 'approval_required',
       actions: [
-        { action_id: 'a', tool_name: 'send_email', args: {}, risk: 'high', reason: 'r' },
-        { action_id: 'b', tool_name: 'delete_file', args: {}, risk: 'low', reason: 'r' },
+        { action_id: 'a', tool_name: 'send_email', args: {}, risk: 'medium', reason: 'r' },
+        { action_id: 'b', tool_name: 'delete_file', args: {}, risk: 'high', reason: 'r' },
       ],
     },
   },
@@ -33,22 +34,35 @@ describe('ApprovalQueue', () => {
     vi.restoreAllMocks();
   });
 
-  it('lists pending threads linking to the chat', async () => {
+  it('lists pending threads linking to the chat, grouped by kind', async () => {
     vi.spyOn(api, 'get').mockResolvedValue({ data: pending });
     renderWithProviders(<ApprovalQueue />);
     const link = await screen.findByRole('link', { name: /Send the report/ });
     expect(link).toHaveAttribute('href', '/app/chat/t1');
-    expect(link).toHaveTextContent('approval');
+    expect(link).toHaveTextContent('Send email, delete_file');
+    expect(link).toHaveTextContent('High risk');
     expect(link).toHaveTextContent('2 actions');
     const second = screen.getByRole('link', { name: /New conversation/ });
-    expect(second).toHaveTextContent('uncertain');
     expect(second).toHaveTextContent('1 action');
+    expect(screen.getByRole('heading', { name: /Waiting for approval/ })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /Outcome unknown/ })).toBeInTheDocument();
     expect(vi.spyOn(api, 'get')).toHaveBeenCalledWith('/approvals/pending');
   });
 
   it('shows an empty state', async () => {
     vi.spyOn(api, 'get').mockResolvedValue({ data: [] });
     renderWithProviders(<ApprovalQueue />);
+    expect(await screen.findByText(/nothing is waiting/i)).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Nothing waiting for you' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Go to chat' })).toHaveAttribute('href', '/app/chat');
+  });
+
+  it('offers a retry when loading fails', async () => {
+    const get = vi.spyOn(api, 'get').mockRejectedValueOnce(new Error('boom'));
+    get.mockResolvedValue({ data: [] });
+    renderWithProviders(<ApprovalQueue />);
+    expect(await screen.findByRole('alert')).toHaveTextContent('Could not load pending approvals.');
+    await userEvent.click(screen.getByRole('button', { name: 'Retry' }));
     expect(await screen.findByText(/nothing is waiting/i)).toBeInTheDocument();
   });
 });

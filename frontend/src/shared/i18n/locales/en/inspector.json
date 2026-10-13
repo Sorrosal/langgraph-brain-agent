@@ -1,0 +1,56 @@
+{
+  "title": "State inspector",
+  "subtitle": "Read-only view of a conversation's checkpoints.",
+  "explainer": "Every step of a run is saved as a checkpoint, so after a crash or restart the agent resumes from the last one instead of starting over.",
+  "conversation": {
+    "label": "Conversation",
+    "placeholder": "Select a conversation…",
+    "untitled": "New conversation",
+    "loadFailed": "Could not load the conversations.",
+    "none": "No conversations yet.",
+    "startOne": "Start one in Chat"
+  },
+  "empty": {
+    "title": "Pick a conversation",
+    "description": "Choose a conversation above to inspect its checkpoints and current state."
+  },
+  "state": {
+    "title": "Current state",
+    "loadFailed": "Could not load the thread state.",
+    "noSummary": "No summary yet.",
+    "noApprovals": "No approvals recorded.",
+    "auditLabel": "Approvals audit trail",
+    "action": "Action",
+    "tool": "Tool",
+    "decision": "Decision",
+    "status": {
+      "idle": "Idle",
+      "running": "Running",
+      "interrupted": "Waiting for approval",
+      "failed": "Failed"
+    },
+    "decisions": {
+      "approve": "Approved",
+      "edit": "Edited",
+      "reject": "Rejected"
+    }
+  },
+  "timeline": {
+    "label": "Checkpoints",
+    "loadFailed": "Could not load the history.",
+    "empty": "No checkpoints yet.",
+    "step": "step {{step}}",
+    "wrote": "wrote:",
+    "next": "next:",
+    "messages_one": "{{count}} msg",
+    "messages_other": "{{count}} msg",
+    "details": "Checkpoint details",
+    "id": "ID",
+    "source": "Source",
+    "stepLabel": "Step",
+    "created": "Created",
+    "wroteLabel": "Wrote",
+    "nextLabel": "Next",
+    "messagesLabel": "Messages"
+  }
+}

@@ -1,5 +1,6 @@
-import { Trash2 } from 'lucide-react';
+import { Loader2, Trash2 } from 'lucide-react';
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Button } from '@/shared/ui/button';
 import {
   Dialog,
@@ -16,6 +17,7 @@ interface DeleteMemoryButtonProps {
 }
 
 export function DeleteMemoryButton({ memoryId }: DeleteMemoryButtonProps) {
+  const { t } = useTranslation('brain');
   const [open, setOpen] = useState(false);
   const { mutate: deleteMemory, isPending } = useDeleteMemory();
 
@@ -24,27 +26,29 @@ export function DeleteMemoryButton({ memoryId }: DeleteMemoryButtonProps) {
       <Button
         variant="ghost"
         size="icon"
-        aria-label="Delete memory"
+        className="hover:text-danger-fg -my-1 -mr-1 size-11 shrink-0 sm:size-10"
+        aria-label={t('memories.delete.label')}
+        title={t('memories.delete.label')}
         onClick={() => {
           setOpen(true);
         }}
       >
-        <Trash2 className="h-4 w-4" />
+        <Trash2 aria-hidden />
       </Button>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Delete this memory?</DialogTitle>
-            <DialogDescription>The agent will no longer recall it.</DialogDescription>
+            <DialogTitle>{t('memories.delete.title')}</DialogTitle>
+            <DialogDescription>{t('memories.delete.description')}</DialogDescription>
           </DialogHeader>
-          <DialogFooter>
+          <DialogFooter className="gap-2 sm:gap-0">
             <Button
               variant="outline"
               onClick={() => {
                 setOpen(false);
               }}
             >
-              Cancel
+              {t('common:actions.cancel')}
             </Button>
             <Button
               variant="destructive"
@@ -57,7 +61,8 @@ export function DeleteMemoryButton({ memoryId }: DeleteMemoryButtonProps) {
                 });
               }}
             >
-              Delete
+              {isPending && <Loader2 className="motion-safe:animate-spin" aria-hidden />}
+              {t('common:actions.delete')}
             </Button>
           </DialogFooter>
         </DialogContent>

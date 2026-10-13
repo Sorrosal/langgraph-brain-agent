@@ -58,14 +58,58 @@ describe('data tables', () => {
     vi.spyOn(api, 'get').mockResolvedValue({ data: [] });
     renderWithProviders(<TasksTab />);
     expect(await screen.findByText('No tasks found.')).toBeInTheDocument();
+    expect(
+      screen.getByText(/Create a task to follow up with Globex on Friday/),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Open chat' })).toHaveAttribute('href', '/app/chat');
   });
 
-  it('shows an error state for emails and queries the inbox by default', async () => {
+  it('says nothing matches, without suggesting new records, when a filter is active', async () => {
+    vi.spyOn(api, 'get').mockResolvedValue({ data: [] });
+    renderWithProviders(<TasksTab />);
+    await screen.findByText('No tasks found.');
+    await userEvent.selectOptions(screen.getByLabelText('Filter by status'), 'done');
+    expect(
+      await screen.findByText('Nothing matches the current search or filters.'),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Open chat' })).not.toBeInTheDocument();
+  });
+
+  it('shows translated badges, a row count and flags overdue tasks', async () => {
+    vi.spyOn(api, 'get').mockResolvedValue({
+      data: [
+        {
+          id: 't1',
+          title: 'Call Globex',
+          description: '',
+          due_date: '2020-01-05',
+          priority: 'high',
+          status: 'open',
+          assignee: null,
+          created_at: '2020-01-01T00:00:00Z',
+        },
+      ],
+    });
+    renderWithProviders(<TasksTab />);
+    expect(await screen.findByText('Call Globex')).toBeInTheDocument();
+    expect(screen.getByText('High')).toBeInTheDocument();
+    expect(screen.getByText('Open', { selector: 'div' })).toBeInTheDocument();
+    expect(screen.getByText('Jan 5, 2020')).toBeInTheDocument();
+    expect(screen.getByText('Overdue')).toBeInTheDocument();
+    expect(screen.getByText('1 task')).toBeInTheDocument();
+  });
+
+  it('shows an error state for emails, queries the inbox by default and retries', async () => {
     const get = vi.spyOn(api, 'get').mockRejectedValue(new ApiError('boom', 500));
     renderWithProviders(<EmailsTab />);
     expect(await screen.findByText('Could not load emails.')).toBeInTheDocument();
     expect(get).toHaveBeenCalledWith('/emails', {
       params: { folder: 'inbox', q: '', limit: 100 },
+    });
+    get.mockClear();
+    await userEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    await waitFor(() => {
+      expect(get).toHaveBeenCalledTimes(1);
     });
   });
 });

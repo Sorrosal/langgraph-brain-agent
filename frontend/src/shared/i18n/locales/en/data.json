@@ -1,0 +1,106 @@
+{
+  "page": {
+    "title": "Data",
+    "description": "Business data the agent works with.",
+    "readOnlyHint": "This view is read-only. To change records, ask the agent in the chat."
+  },
+  "tabs": {
+    "contacts": "Contacts",
+    "deals": "Deals",
+    "tasks": "Tasks",
+    "emails": "Emails",
+    "withCount": "{{label}} ({{total}})"
+  },
+  "table": {
+    "none": "None",
+    "emptyFiltered": "Nothing matches the current search or filters.",
+    "askAgent": "Ask the agent in the chat: “{{example}}”",
+    "openChat": "Open chat"
+  },
+  "contacts": {
+    "title": "Contacts",
+    "search": "Search contacts",
+    "count_one": "{{count}} contact",
+    "count_other": "{{count}} contacts",
+    "empty": "No contacts found.",
+    "example": "Create a contact Maria Lopez at Globex",
+    "error": "Could not load contacts.",
+    "columns": {
+      "name": "Name",
+      "email": "Email",
+      "company": "Company",
+      "phone": "Phone",
+      "tags": "Tags"
+    }
+  },
+  "deals": {
+    "title": "Deals",
+    "filter": "Filter by stage",
+    "allStages": "All stages",
+    "count_one": "{{count}} deal",
+    "count_other": "{{count}} deals",
+    "empty": "No deals found.",
+    "example": "Create a 12,000 USD deal with Globex for the annual renewal",
+    "error": "Could not load deals.",
+    "columns": {
+      "title": "Title",
+      "amount": "Amount",
+      "stage": "Stage",
+      "updated": "Updated"
+    },
+    "stages": {
+      "lead": "Lead",
+      "qualified": "Qualified",
+      "proposal": "Proposal",
+      "won": "Won",
+      "lost": "Lost"
+    }
+  },
+  "tasks": {
+    "title": "Tasks",
+    "filter": "Filter by status",
+    "allStatuses": "All statuses",
+    "count_one": "{{count}} task",
+    "count_other": "{{count}} tasks",
+    "empty": "No tasks found.",
+    "example": "Create a task to follow up with Globex on Friday",
+    "error": "Could not load tasks.",
+    "overdue": "Overdue",
+    "columns": {
+      "title": "Title",
+      "priority": "Priority",
+      "status": "Status",
+      "due": "Due",
+      "assignee": "Assignee"
+    },
+    "statuses": {
+      "open": "Open",
+      "done": "Done"
+    },
+    "priorities": {
+      "low": "Low",
+      "normal": "Normal",
+      "high": "High"
+    }
+  },
+  "emails": {
+    "title": "Emails",
+    "search": "Search emails",
+    "folder": "Folder",
+    "count_one": "{{count}} email",
+    "count_other": "{{count}} emails",
+    "empty": "No emails found.",
+    "example": "Draft an email to Maria Lopez about her renewal",
+    "error": "Could not load emails.",
+    "columns": {
+      "from": "From",
+      "to": "To",
+      "subject": "Subject",
+      "date": "Date"
+    },
+    "folders": {
+      "inbox": "Inbox",
+      "sent": "Sent"
+    }
+  }
+}

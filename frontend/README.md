@@ -46,6 +46,17 @@ the app origin in its CORS settings (`cors_origins`).
   (`POST /threads/{id}/approvals`: approve / reject / edit / respond); `uncertain_execution` uses
   `POST /threads/{id}/uncertain` (confirm done / retry / skip). All actions need a decision.
 
+## Design system and languages
+
+- **Design system** — mirrors the Evolantia platform: Figtree body, Sora headings, JetBrains Mono,
+  OKLCH tokens with a violet brand accent, light and dark themes, glass panels over a prismatic
+  backdrop. Tokens and utilities (`glass`, `prism-ring`, `ev-orb`, `shadow-e1…e4`) live in
+  `src/app/styles/globals.css`; components only use tokens, never raw colours.
+- **Languages** — English and Spanish with i18next. Each namespace is a JSON file in
+  `src/shared/i18n/locales/<en|es>/<namespace>.json` (loaded automatically); both languages must
+  have the same keys. The language is detected from the browser, can be changed from the header
+  or Settings, and is remembered per device. Tests run in English.
+
 ## Structure
 
 ```

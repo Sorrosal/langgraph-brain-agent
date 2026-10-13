@@ -1,0 +1,109 @@
+{
+  "page": {
+    "title": "Brain",
+    "description": "What the agent remembers and the rules it follows."
+  },
+  "tabs": {
+    "memories": "Memories",
+    "rules": "Rules"
+  },
+  "kinds": {
+    "fact": "Fact",
+    "preference": "Preference",
+    "episode": "Episode"
+  },
+  "kindHints": {
+    "fact": "Something that is true, such as where someone works.",
+    "preference": "How someone likes things done.",
+    "episode": "Something that happened, such as a past decision."
+  },
+  "memories": {
+    "add": {
+      "title": "Add a memory",
+      "description": "Teach the agent something it should recall in future conversations.",
+      "kindLabel": "Memory kind",
+      "textLabel": "Memory text",
+      "placeholder": "Something the agent should remember…",
+      "submit": "Add memory",
+      "errors": {
+        "required": "Enter some text",
+        "tooLong": "At most 2000 characters"
+      }
+    },
+    "filter": {
+      "kindLabel": "Filter by kind",
+      "allKinds": "All kinds",
+      "searchLabel": "Search memories",
+      "searchPlaceholder": "Search memories by meaning…"
+    },
+    "count_one": "{{count}} memory",
+    "count_other": "{{count}} memories",
+    "card": {
+      "match": "match {{score}}",
+      "fromChat": "From a chat",
+      "createdAt": "Added {{date}}"
+    },
+    "empty": {
+      "title": "No memories yet.",
+      "description": "Memories are the facts, preferences and episodes the agent keeps between conversations. Add one above, or just chat: the agent also learns them on its own.",
+      "openChat": "Open chat",
+      "searchTitle": "No memories match your search.",
+      "searchDescription": "Try different words. Search matches by meaning, not exact text.",
+      "clearSearch": "Clear search",
+      "kindTitle": "No memories of this kind yet.",
+      "kindDescription": "Add one above or ask the agent to remember something.",
+      "showAll": "Show all kinds"
+    },
+    "loadError": "Could not load memories.",
+    "delete": {
+      "label": "Delete memory",
+      "title": "Delete this memory?",
+      "description": "The agent will no longer recall it."
+    }
+  },
+  "rules": {
+    "loadError": "Could not load rules.",
+    "version": "Version",
+    "readOnly": "Read-only",
+    "readOnlyNote": "Only administrators can edit the rules. You can read them here, and the agent follows them in every conversation.",
+    "saved": "Rules saved — version {{version}}",
+    "persona": {
+      "title": "Persona",
+      "description": "How the agent introduces itself and how it speaks.",
+      "empty": "No persona set."
+    },
+    "guidelines": {
+      "title": "Guidelines",
+      "description": "Preferences the agent weighs when it answers. Higher priority comes first.",
+      "empty": "No guidelines defined.",
+      "priorityShort": "P{{priority}}",
+      "priority": "Priority {{priority}}"
+    },
+    "hardRules": {
+      "title": "Hard rules",
+      "description": "Limits enforced on tools no matter what the model decides.",
+      "empty": "No hard rules defined.",
+      "actions": {
+        "block": "Blocked",
+        "require_approval": "Requires approval"
+      },
+      "risk": "Risk: {{level}}",
+      "levels": {
+        "low": "low",
+        "medium": "medium",
+        "high": "high"
+      },
+      "reason": "Reason",
+      "tool": "Tool"
+    },
+    "files": {
+      "title": "Rule files",
+      "description": "The YAML source of everything above.",
+      "chatHint": "You can also change the rules by asking the agent in the chat. It uses the <code>update_rules_file</code> tool, which always asks for your approval before saving.",
+      "unsaved": "Unsaved changes",
+      "save": "Save {{name}}",
+      "discard": "Discard changes",
+      "errorTitle": "The rules were not saved"
+    }
+  }
+}

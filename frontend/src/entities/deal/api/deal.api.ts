@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { z } from 'zod';
 import { api } from '@/shared/api/axios-instance';
 import { dealSchema } from '../model/deal.schemas';
@@ -13,5 +13,6 @@ export function useDeals(stage: DealStage | '') {
       });
       return z.array(dealSchema).parse(data);
     },
+    placeholderData: keepPreviousData,
   });
 }

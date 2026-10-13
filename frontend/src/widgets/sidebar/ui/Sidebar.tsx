@@ -1,158 +1,213 @@
-import {
-  Brain,
-  ChevronLeft,
-  ChevronRight,
-  Database,
-  LogOut,
-  MessageSquare,
-  Microscope,
-  Settings,
-  ShieldCheck,
-  Zap,
-} from 'lucide-react';
+import { ChevronsLeft, ChevronsRight, LogOut, type LucideIcon } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { NavLink } from 'react-router-dom';
 import { useLogout } from '@/features/auth';
+import { usePendingApprovals } from '@/entities/pending-approval';
 import { env } from '@/shared/config/env';
-import { Button } from '@/shared/ui/button';
-import { Separator } from '@/shared/ui/separator';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/shared/ui/tooltip';
 import { cn } from '@/shared/lib/cn';
-import { useMediaQuery } from '@/shared/hooks/use-media-query';
+import { Sheet, SheetContent, SheetTitle } from '@/shared/ui/sheet';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/shared/ui/tooltip';
+import { navItems } from '../model/nav-items';
 import { useSidebarStore } from '../model/sidebar.store';
 
-interface NavItem {
-  to: string;
-  icon: React.ComponentType<{ className?: string }>;
-  label: string;
+const MAX_BADGE = 99;
+
+function rowClass(collapsed: boolean) {
+  return cn(
+    'flex h-11 w-full items-center gap-3 rounded-[var(--radius-md)] px-3 text-sm transition-colors md:h-10',
+    collapsed && 'justify-center px-0',
+  );
 }
 
-const navItems: NavItem[] = [
-  { to: '/app/chat', icon: MessageSquare, label: 'Chat' },
-  { to: '/app/approvals', icon: ShieldCheck, label: 'Approvals' },
-  { to: '/app/inspector', icon: Microscope, label: 'Inspector' },
-  { to: '/app/brain', icon: Brain, label: 'Brain' },
-  { to: '/app/data', icon: Database, label: 'Data' },
-  { to: '/app/settings', icon: Settings, label: 'Settings' },
-];
+/** In collapsed mode the label only lives in a tooltip (and as sr-only text on the control). */
+function WithTooltip({
+  label,
+  enabled,
+  children,
+}: {
+  label: string;
+  enabled: boolean;
+  children: React.ReactElement;
+}) {
+  if (!enabled) return children;
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{children}</TooltipTrigger>
+      <TooltipContent side="right">{label}</TooltipContent>
+    </Tooltip>
+  );
+}
 
+function CountBadge({ count, collapsed }: { count: number; collapsed: boolean }) {
+  return (
+    <span
+      aria-hidden="true"
+      className={cn(
+        'bg-primary text-primary-foreground text-2xs flex items-center justify-center rounded-full font-semibold tabular-nums',
+        collapsed ? 'absolute top-1 right-1.5 h-4 min-w-4 px-1' : 'ml-auto h-5 min-w-5 px-1.5',
+      )}
+    >
+      {count > MAX_BADGE ? `${String(MAX_BADGE)}+` : count}
+    </span>
+  );
+}
+
+interface ActionRowProps {
+  icon: LucideIcon;
+  label: string;
+  collapsed: boolean;
+  onClick: () => void;
+}
+
+function ActionRow({ icon: Icon, label, collapsed, onClick }: ActionRowProps) {
+  return (
+    <WithTooltip label={label} enabled={collapsed}>
+      <button
+        type="button"
+        onClick={onClick}
+        className={cn(
+          rowClass(collapsed),
+          'text-muted-foreground hover:bg-muted hover:text-foreground',
+        )}
+      >
+        <Icon className="size-[1.125rem] shrink-0" aria-hidden="true" />
+        <span className={collapsed ? 'sr-only' : 'truncate'}>{label}</span>
+      </button>
+    </WithTooltip>
+  );
+}
+
+interface SidebarPanelProps {
+  collapsed: boolean;
+  onNavigate?: () => void;
+  /** Desktop only: the collapse/expand control. */
+  onToggle?: () => void;
+}
+
+/** Brand, navigation and account actions; shared by the desktop rail and the mobile drawer. */
+function SidebarPanel({ collapsed, onNavigate, onToggle }: SidebarPanelProps) {
+  const { t } = useTranslation('shell');
+  const logout = useLogout();
+  const { data: pending } = usePendingApprovals();
+  const pendingCount = pending?.length ?? 0;
+
+  return (
+    <TooltipProvider delayDuration={0}>
+      <div
+        className={cn(
+          'flex h-14 shrink-0 items-center gap-2.5 px-4',
+          collapsed && 'justify-center px-0',
+        )}
+      >
+        <span className="ev-orb size-7 shrink-0" aria-hidden="true" />
+        {!collapsed && (
+          <span className="font-display truncate text-base font-semibold tracking-tight">
+            {env.VITE_APP_NAME}
+          </span>
+        )}
+      </div>
+
+      <nav aria-label={t('nav.label')} className="min-h-0 flex-1 overflow-y-auto px-2 py-2">
+        <ul className="flex flex-col gap-1">
+          {navItems.map((item) => {
+            const label = t(`nav.${item.key}`);
+            const count = item.key === 'approvals' ? pendingCount : 0;
+            return (
+              <li key={item.to}>
+                <WithTooltip
+                  label={count > 0 ? `${label} · ${t('nav.pending', { count })}` : label}
+                  enabled={collapsed}
+                >
+                  <NavLink
+                    to={item.to}
+                    onClick={onNavigate}
+                    className={({ isActive }) =>
+                      cn(
+                        rowClass(collapsed),
+                        'relative',
+                        isActive
+                          ? 'bg-accent text-accent-foreground font-medium'
+                          : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+                      )
+                    }
+                  >
+                    <item.icon className="size-[1.125rem] shrink-0" aria-hidden="true" />
+                    <span className={collapsed ? 'sr-only' : 'truncate'}>{label}</span>
+                    {count > 0 && (
+                      <>
+                        <CountBadge count={count} collapsed={collapsed} />
+                        <span className="sr-only">{t('nav.pending', { count })}</span>
+                      </>
+                    )}
+                  </NavLink>
+                </WithTooltip>
+              </li>
+            );
+          })}
+        </ul>
+      </nav>
+
+      <div className="border-border flex shrink-0 flex-col gap-1 border-t p-2">
+        <ActionRow
+          icon={LogOut}
+          label={t('nav.signOut')}
+          collapsed={collapsed}
+          onClick={() => {
+            logout();
+          }}
+        />
+        {onToggle && (
+          <ActionRow
+            icon={collapsed ? ChevronsRight : ChevronsLeft}
+            label={collapsed ? t('nav.expand') : t('nav.collapse')}
+            collapsed={collapsed}
+            onClick={onToggle}
+          />
+        )}
+      </div>
+    </TooltipProvider>
+  );
+}
+
+/** Desktop rail (hidden below `md`; the header's menu button opens `MobileSidebar` instead). */
 export function Sidebar() {
   const { isCollapsed, toggle } = useSidebarStore();
-  const isMobile = useMediaQuery('(max-width: 768px)');
-  const logout = useLogout();
-
-  if (isMobile) return null;
 
   return (
     <aside
       className={cn(
-        'bg-card border-border flex h-full flex-col border-r transition-all duration-200',
-        isCollapsed ? 'w-16' : 'w-60',
+        'glass hidden shrink-0 flex-col overflow-hidden rounded-[var(--radius-xl)] transition-[width] duration-200 md:flex',
+        isCollapsed ? 'w-[var(--sidebar-width-collapsed)]' : 'w-[var(--sidebar-width)]',
       )}
     >
-      {/* Logo */}
-      <div className="flex h-14 items-center px-4">
-        <div className="flex items-center gap-2">
-          <Zap className="text-primary h-6 w-6 shrink-0" />
-          {!isCollapsed && <span className="truncate font-bold">{env.VITE_APP_NAME}</span>}
-        </div>
-      </div>
-
-      <Separator />
-
-      {/* Navigation */}
-      <nav className="flex-1 overflow-y-auto py-2">
-        <TooltipProvider delayDuration={0}>
-          <ul className="flex flex-col gap-1 px-2">
-            {navItems.map((item) => (
-              <li key={item.to}>
-                {isCollapsed ? (
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <NavLink
-                        to={item.to}
-                        className={({ isActive }) =>
-                          cn(
-                            'flex h-9 w-9 items-center justify-center rounded-md transition-colors',
-                            isActive
-                              ? 'bg-primary text-primary-foreground'
-                              : 'hover:bg-accent hover:text-accent-foreground',
-                          )
-                        }
-                        aria-label={item.label}
-                      >
-                        <item.icon className="h-5 w-5" />
-                      </NavLink>
-                    </TooltipTrigger>
-                    <TooltipContent side="right">{item.label}</TooltipContent>
-                  </Tooltip>
-                ) : (
-                  <NavLink
-                    to={item.to}
-                    className={({ isActive }) =>
-                      cn(
-                        'flex h-9 items-center gap-3 rounded-md px-3 text-sm transition-colors',
-                        isActive
-                          ? 'bg-primary text-primary-foreground font-medium'
-                          : 'hover:bg-accent hover:text-accent-foreground',
-                      )
-                    }
-                  >
-                    <item.icon className="h-5 w-5 shrink-0" />
-                    <span className="truncate">{item.label}</span>
-                  </NavLink>
-                )}
-              </li>
-            ))}
-          </ul>
-        </TooltipProvider>
-      </nav>
-
-      <Separator />
-
-      {/* Footer */}
-      <div className="flex flex-col gap-1 p-2">
-        {isCollapsed ? (
-          <TooltipProvider delayDuration={0}>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-9 w-9"
-                  aria-label="Sign out"
-                  onClick={() => {
-                    logout();
-                  }}
-                >
-                  <LogOut className="h-5 w-5" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side="right">Sign out</TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
-        ) : (
-          <Button
-            variant="ghost"
-            className="w-full justify-start gap-3 px-3"
-            onClick={() => {
-              logout();
-            }}
-          >
-            <LogOut className="h-5 w-5 shrink-0" />
-            <span>Sign out</span>
-          </Button>
-        )}
-
-        <Button
-          variant="ghost"
-          size="icon"
-          className="ml-auto h-9 w-9"
-          onClick={toggle}
-          aria-label={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-        >
-          {isCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
-        </Button>
-      </div>
+      <SidebarPanel collapsed={isCollapsed} onToggle={toggle} />
     </aside>
+  );
+}
+
+interface MobileSidebarProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}
+
+export function MobileSidebar({ open, onOpenChange }: MobileSidebarProps) {
+  const { t } = useTranslation('shell');
+
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent
+        side="left"
+        aria-describedby={undefined}
+        className="flex w-[min(18rem,85vw)] flex-col gap-0 p-0 sm:max-w-none"
+      >
+        <SheetTitle className="sr-only">{t('nav.title')}</SheetTitle>
+        <SidebarPanel
+          collapsed={false}
+          onNavigate={() => {
+            onOpenChange(false);
+          }}
+        />
+      </SheetContent>
+    </Sheet>
   );
 }

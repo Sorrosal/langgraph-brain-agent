@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { i18n } from '@/shared/i18n';
 import type {
   ActionRequest,
   ApprovalDecision,
@@ -25,15 +26,22 @@ export type BuildResult<T> =
 
 const argsSchema = z.record(z.string(), z.unknown());
 
+// User-facing messages are resolved at call time so they follow the active language.
 function parseArgs(text: string): { args: Record<string, unknown> } | { error: string } {
   let json: unknown;
   try {
     json = JSON.parse(text);
   } catch {
-    return { error: 'Arguments must be valid JSON.' };
+    return { error: i18n.t('approvals:errors.invalidJson') };
   }
   const parsed = argsSchema.safeParse(json);
-  return parsed.success ? { args: parsed.data } : { error: 'Arguments must be a JSON object.' };
+  return parsed.success ? { args: parsed.data } : { error: i18n.t('approvals:errors.notObject') };
+}
+
+/** Message for edited arguments that cannot be sent, or `undefined` when they are valid. */
+export function argsError(text: string): string | undefined {
+  const result = parseArgs(text);
+  return 'error' in result ? result.error : undefined;
 }
 
 function toApprovalDecision(draft: ApprovalDraft): ApprovalDecision | string {
@@ -47,7 +55,7 @@ function toApprovalDecision(draft: ApprovalDraft): ApprovalDecision | string {
     case 'respond':
       return draft.message.trim()
         ? { type: 'respond', message: draft.message.trim() }
-        : 'Write the response to send back.';
+        : i18n.t('approvals:errors.emptyResponse');
     case 'edit': {
       const result = parseArgs(draft.argsText);
       return 'error' in result ? result.error : { type: 'edit', args: result.args };
@@ -62,8 +70,6 @@ function toUncertainDecision(draft: UncertainDraft): UncertainDecision {
     : { type: 'confirm_done' };
 }
 
-const NO_DECISION = 'Choose a decision.';
-
 /** One decision per action, keyed by action id; reports every problem at once. */
 export function buildApprovalPayload(
   actions: readonly ActionRequest[],
@@ -73,7 +79,7 @@ export function buildApprovalPayload(
   const errors: Record<string, string> = {};
   for (const { action_id } of actions) {
     const draft = drafts[action_id];
-    const decision = draft ? toApprovalDecision(draft) : NO_DECISION;
+    const decision = draft ? toApprovalDecision(draft) : i18n.t('approvals:errors.noDecision');
     if (typeof decision === 'string') errors[action_id] = decision;
     else decisions[action_id] = decision;
   }
@@ -91,7 +97,7 @@ export function buildUncertainPayload(
   for (const { action_id } of actions) {
     const draft = drafts[action_id];
     if (draft) decisions[action_id] = toUncertainDecision(draft);
-    else errors[action_id] = NO_DECISION;
+    else errors[action_id] = i18n.t('approvals:errors.noDecision');
   }
   return Object.keys(errors).length > 0
     ? { ok: false, errors }

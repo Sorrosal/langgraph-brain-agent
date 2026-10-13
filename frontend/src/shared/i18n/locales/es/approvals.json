@@ -1,0 +1,76 @@
+{
+  "page": {
+    "title": "Aprobaciones",
+    "description": "Conversaciones en pausa a la espera de una decisión. Abre una para revisarla."
+  },
+  "risk": {
+    "low": "Riesgo bajo",
+    "medium": "Riesgo medio",
+    "high": "Riesgo alto"
+  },
+  "action": {
+    "region": "Acción {{tool}}",
+    "why": "Por qué se necesita aprobación",
+    "outcome": "Qué ocurrió",
+    "arguments": "Argumentos",
+    "noArguments": "Sin argumentos",
+    "rawJson": "JSON sin procesar",
+    "needsDecision": "Requiere decisión",
+    "outcomeUnknown": "Resultado desconocido"
+  },
+  "values": {
+    "true": "Sí",
+    "false": "No",
+    "empty": "Vacío"
+  },
+  "decisions": {
+    "approve": "Aprobar",
+    "reject": "Rechazar",
+    "edit": "Editar",
+    "respond": "Responder",
+    "confirm_done": "Confirmar ejecución",
+    "retry": "Reintentar",
+    "skip": "Omitir",
+    "decisionFor": "Decisión para {{tool}}"
+  },
+  "fields": {
+    "rejectReason": "Motivo (opcional)",
+    "rejectHint": "El asistente verá este motivo.",
+    "editArgs": "Argumentos (JSON)",
+    "editHint": "La herramienta se ejecutará exactamente con estos argumentos.",
+    "respond": "Respuesta al asistente",
+    "respondHint": "La herramienta no se ejecutará. En su lugar se enviará tu mensaje.",
+    "confirmResult": "Resultado que comunicar (opcional)",
+    "confirmHint": "Cuéntale al asistente qué hizo la herramienta, si lo sabes."
+  },
+  "review": {
+    "titleApproval": "Esperando tu aprobación",
+    "titleUncertain": "Es posible que estas acciones ya se hayan ejecutado. ¿Qué pasó?",
+    "introApproval_one": "El asistente quiere ejecutar {{count}} acción. Revísala antes de que continúe.",
+    "introApproval_other": "El asistente quiere ejecutar {{count}} acciones. Revisa cada una antes de que continúe.",
+    "introUncertain": "Cuéntale al asistente qué pasó para que pueda continuar con seguridad.",
+    "progress": "{{done}} de {{total}} con decisión",
+    "chooseOne": "Elige una decisión para continuar.",
+    "ready": "Listo para enviar.",
+    "submit": "Enviar decisiones",
+    "sending": "Enviando…",
+    "sendFailed": "No se pudieron enviar tus decisiones. No se ha cambiado nada, así que puedes volver a intentarlo."
+  },
+  "errors": {
+    "noDecision": "Elige una decisión.",
+    "invalidJson": "Los argumentos deben ser un JSON válido.",
+    "notObject": "Los argumentos deben ser un objeto JSON.",
+    "emptyResponse": "Escribe la respuesta que quieres enviar."
+  },
+  "queue": {
+    "untitled": "Nueva conversación",
+    "actions_one": "{{count}} acción",
+    "actions_other": "{{count}} acciones",
+    "groupApproval": "Esperando aprobación",
+    "groupUncertain": "Resultado desconocido",
+    "loadFailed": "No se pudieron cargar las aprobaciones pendientes.",
+    "emptyTitle": "No tienes nada pendiente",
+    "emptyDescription": "No hay nada esperando tu decisión. Cuando el agente necesite aprobación para una acción sensible, aparecerá aquí.",
+    "emptyAction": "Ir al chat"
+  }
+}

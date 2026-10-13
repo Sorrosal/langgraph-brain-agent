@@ -16,7 +16,8 @@ const sizeClasses = {
 
 function getInitials(name: string): string {
   return name
-    .split(' ')
+    .split(/\s+/)
+    .filter(Boolean)
     .map((part) => part[0] ?? '')
     .slice(0, 2)
     .join('')
@@ -27,7 +28,9 @@ export function UserAvatar({ user, size = 'md', className }: UserAvatarProps) {
   const name = user.display_name || user.email;
   return (
     <Avatar className={cn(sizeClasses[size], className)}>
-      <AvatarFallback>{getInitials(name)}</AvatarFallback>
+      <AvatarFallback className="bg-brand-bg text-brand-ink font-semibold">
+        {getInitials(name)}
+      </AvatarFallback>
     </Avatar>
   );
 }

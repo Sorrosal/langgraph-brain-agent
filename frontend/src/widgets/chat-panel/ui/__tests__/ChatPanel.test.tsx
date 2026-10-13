@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { api } from '@/shared/api/axios-instance';
 import { ChatPanel } from '../ChatPanel';
@@ -48,13 +49,15 @@ describe('ChatPanel', () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     render(
       <QueryClientProvider client={client}>
-        <ChatPanel threadId="t1" />
+        <MemoryRouter>
+          <ChatPanel threadId="t1" />
+        </MemoryRouter>
       </QueryClientProvider>,
     );
 
     expect(await screen.findByText('Send the report')).toBeInTheDocument();
     expect(screen.getByRole('status')).toHaveTextContent('Waiting for your approval');
-    expect(screen.getByRole('region', { name: 'Action send_email' })).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Action Send email' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Submit decisions' })).toBeDisabled();
     expect(screen.getByRole('textbox', { name: 'Message' })).toBeDisabled();
   });
@@ -79,7 +82,9 @@ describe('ChatPanel', () => {
       const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
       render(
         <QueryClientProvider client={client}>
-          <ChatPanel threadId="t1" />
+          <MemoryRouter>
+            <ChatPanel threadId="t1" />
+          </MemoryRouter>
         </QueryClientProvider>,
       );
 

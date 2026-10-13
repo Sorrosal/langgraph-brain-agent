@@ -1,5 +1,6 @@
 import { screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
+import { i18n } from '@/shared/i18n';
 import { renderWithProviders } from '@/test/render';
 import LandingPage from '../LandingPage';
 
@@ -22,6 +23,18 @@ describe('LandingPage', () => {
       expect(screen.getByRole('heading', { level: 2, name })).toBeVisible();
     }
     expect(screen.getByRole('contentinfo')).toHaveTextContent(/MIT/);
+  });
+
+  it('translates the page when the language changes', async () => {
+    await i18n.changeLanguage('es');
+    try {
+      renderWithProviders(<LandingPage showAppCta />);
+
+      expect(screen.getByRole('heading', { level: 2, name: 'Qué hace' })).toBeVisible();
+      expect(screen.getByRole('link', { name: /abrir la aplicación/i })).toBeVisible();
+    } finally {
+      await i18n.changeLanguage('en');
+    }
   });
 
   it('lists what needs approval and what is blocked', () => {

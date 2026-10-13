@@ -49,7 +49,8 @@ describe('BrainRules', () => {
     expect(await screen.findByText('abcdef123456')).toBeInTheDocument();
     expect(screen.getByText('A careful assistant')).toBeInTheDocument();
     expect(screen.getByText('no-wire')).toBeInTheDocument();
-    expect(screen.getByText('require_approval')).toBeInTheDocument();
+    expect(screen.getByText('Requires approval')).toBeInTheDocument();
+    expect(screen.getByText('Risk: high')).toBeInTheDocument();
     const [first] = screen.getAllByText(/^P\d$/);
     expect(first).toHaveTextContent('P5');
   });
@@ -59,6 +60,20 @@ describe('BrainRules', () => {
     renderWithProviders(<BrainRules />);
     expect(await screen.findByLabelText('base.yaml')).toHaveAttribute('readonly');
     expect(screen.queryByRole('button', { name: /save/i })).not.toBeInTheDocument();
+    expect(screen.getByText(/Only administrators can edit the rules/)).toBeInTheDocument();
+  });
+
+  it('points admins to the chat and discards unsaved edits', async () => {
+    signIn('admin');
+    renderWithProviders(<BrainRules />);
+    const editor = await screen.findByLabelText('base.yaml');
+    expect(screen.getByText('update_rules_file')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Discard changes' })).toBeDisabled();
+
+    await userEvent.type(editor, 'x');
+    expect(screen.getByText('Unsaved changes')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Discard changes' }));
+    expect(editor).toHaveValue('persona: x');
   });
 
   it('lets an admin save and reports the new version', async () => {

@@ -1,0 +1,76 @@
+{
+  "page": {
+    "title": "Approvals",
+    "description": "Conversations paused on a decision. Open one to review it."
+  },
+  "risk": {
+    "low": "Low risk",
+    "medium": "Medium risk",
+    "high": "High risk"
+  },
+  "action": {
+    "region": "Action {{tool}}",
+    "why": "Why approval is needed",
+    "outcome": "What happened",
+    "arguments": "Arguments",
+    "noArguments": "No arguments",
+    "rawJson": "Raw JSON",
+    "needsDecision": "Needs decision",
+    "outcomeUnknown": "Outcome unknown"
+  },
+  "values": {
+    "true": "Yes",
+    "false": "No",
+    "empty": "Empty"
+  },
+  "decisions": {
+    "approve": "Approve",
+    "reject": "Reject",
+    "edit": "Edit",
+    "respond": "Respond",
+    "confirm_done": "Confirm done",
+    "retry": "Retry",
+    "skip": "Skip",
+    "decisionFor": "Decision for {{tool}}"
+  },
+  "fields": {
+    "rejectReason": "Reason (optional)",
+    "rejectHint": "The assistant will see this reason.",
+    "editArgs": "Arguments (JSON)",
+    "editHint": "The tool will run with exactly these arguments.",
+    "respond": "Response to the assistant",
+    "respondHint": "The tool will not run. Your message is sent back instead.",
+    "confirmResult": "Result to report (optional)",
+    "confirmHint": "Tell the assistant what the tool did, if you know."
+  },
+  "review": {
+    "titleApproval": "Waiting for your approval",
+    "titleUncertain": "These actions may already have run. What happened?",
+    "introApproval_one": "The assistant wants to run {{count}} action. Review it before it continues.",
+    "introApproval_other": "The assistant wants to run {{count}} actions. Review each one before it continues.",
+    "introUncertain": "Tell the assistant what happened so it can continue safely.",
+    "progress": "{{done}} of {{total}} decided",
+    "chooseOne": "Choose a decision to continue.",
+    "ready": "Ready to send.",
+    "submit": "Submit decisions",
+    "sending": "Sending…",
+    "sendFailed": "Your decisions could not be sent. Nothing was changed, so you can try again."
+  },
+  "errors": {
+    "noDecision": "Choose a decision.",
+    "invalidJson": "Arguments must be valid JSON.",
+    "notObject": "Arguments must be a JSON object.",
+    "emptyResponse": "Write the response to send back."
+  },
+  "queue": {
+    "untitled": "New conversation",
+    "actions_one": "{{count}} action",
+    "actions_other": "{{count}} actions",
+    "groupApproval": "Waiting for approval",
+    "groupUncertain": "Outcome unknown",
+    "loadFailed": "Could not load pending approvals.",
+    "emptyTitle": "Nothing waiting for you",
+    "emptyDescription": "Nothing is waiting for your decision. When the agent needs approval for a sensitive action, it will show up here.",
+    "emptyAction": "Go to chat"
+  }
+}

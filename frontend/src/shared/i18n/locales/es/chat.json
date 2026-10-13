@@ -1,0 +1,53 @@
+{
+  "conversations": "Conversaciones",
+  "newConversation": "Nueva conversación",
+  "untitled": "Nueva conversación",
+  "noConversations": "Todavía no hay conversaciones.",
+  "noConversationsHint": "Empieza una y pregúntale lo que quieras al agente.",
+  "loadConversationsFailed": "No se han podido cargar las conversaciones.",
+  "loadConversationFailed": "No se ha podido cargar esta conversación.",
+  "conversation": "Conversación",
+  "backToConversations": "Conversaciones",
+  "you": "Tú",
+  "assistant": "Asistente",
+  "welcome": {
+    "title": "¿Qué hacemos hoy?",
+    "subtitle": "Brain Agent lee y redacta emails, gestiona tareas y trabaja con tu CRM. Todo lo delicado espera a tu aprobación.",
+    "emptyThread": "Escribe un mensaje para empezar.",
+    "suggestionsLabel": "Prueba con una de estas"
+  },
+  "suggestions": {
+    "tasks": "¿Qué tareas quedan abiertas esta semana?",
+    "contact": "Crea un contacto María López (maria@globex.com) de Globex",
+    "email": "Redacta un email a juan@ejemplo.com moviendo nuestra reunión al lunes",
+    "memory": "Recuerda que prefiero las reuniones por la mañana"
+  },
+  "composer": {
+    "label": "Mensaje",
+    "placeholder": "Escribe a Brain Agent…",
+    "placeholderBusy": "Esperando al asistente…",
+    "placeholderApproval": "Resuelve la aprobación pendiente para continuar…",
+    "hint": "Intro para enviar · Mayús+Intro para nueva línea",
+    "send": "Enviar"
+  },
+  "activity": {
+    "thinking": "Pensando…",
+    "runningTool": "Ejecutando: {{tool}}",
+    "waitingApproval": "Esperando tu aprobación"
+  },
+  "tool": {
+    "result": "Resultado de la herramienta",
+    "resultError": "Resultado de la herramienta (error)",
+    "running": "En curso",
+    "done": "Hecho",
+    "failed": "Ha fallado"
+  },
+  "failure": "La ejecución ha fallado. Envía un mensaje para reintentar.",
+  "jumpToLatest": "Ir al final",
+  "sendError": {
+    "generic": "No se ha podido enviar el mensaje. Inténtalo de nuevo.",
+    "busy": "Esta conversación está ocupada. Espera a que termine la ejecución actual o resuelve la aprobación pendiente.",
+    "tooFast": "Estás enviando mensajes demasiado rápido. Espera un momento.",
+    "tooFastWait": "Estás enviando mensajes demasiado rápido. Vuelve a intentarlo en {{seconds}} segundos."
+  }
+}

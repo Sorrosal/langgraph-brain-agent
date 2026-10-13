@@ -1,0 +1,106 @@
+{
+  "page": {
+    "title": "Datos",
+    "description": "Los datos de negocio con los que trabaja el agente.",
+    "readOnlyHint": "Esta vista es de solo lectura. Para cambiar registros, pídeselo al agente en el chat."
+  },
+  "tabs": {
+    "contacts": "Contactos",
+    "deals": "Oportunidades",
+    "tasks": "Tareas",
+    "emails": "Correos",
+    "withCount": "{{label}} ({{total}})"
+  },
+  "table": {
+    "none": "Ninguno",
+    "emptyFiltered": "Nada coincide con la búsqueda o los filtros actuales.",
+    "askAgent": "Pídeselo al agente en el chat: «{{example}}»",
+    "openChat": "Abrir el chat"
+  },
+  "contacts": {
+    "title": "Contactos",
+    "search": "Buscar contactos",
+    "count_one": "{{count}} contacto",
+    "count_other": "{{count}} contactos",
+    "empty": "No se encontraron contactos.",
+    "example": "Crea un contacto María López en Globex",
+    "error": "No se pudieron cargar los contactos.",
+    "columns": {
+      "name": "Nombre",
+      "email": "Correo",
+      "company": "Empresa",
+      "phone": "Teléfono",
+      "tags": "Etiquetas"
+    }
+  },
+  "deals": {
+    "title": "Oportunidades",
+    "filter": "Filtrar por fase",
+    "allStages": "Todas las fases",
+    "count_one": "{{count}} oportunidad",
+    "count_other": "{{count}} oportunidades",
+    "empty": "No se encontraron oportunidades.",
+    "example": "Crea una oportunidad de 12.000 USD con Globex para la renovación anual",
+    "error": "No se pudieron cargar las oportunidades.",
+    "columns": {
+      "title": "Título",
+      "amount": "Importe",
+      "stage": "Fase",
+      "updated": "Actualizada"
+    },
+    "stages": {
+      "lead": "Posible cliente",
+      "qualified": "Cualificada",
+      "proposal": "Propuesta",
+      "won": "Ganada",
+      "lost": "Perdida"
+    }
+  },
+  "tasks": {
+    "title": "Tareas",
+    "filter": "Filtrar por estado",
+    "allStatuses": "Todos los estados",
+    "count_one": "{{count}} tarea",
+    "count_other": "{{count}} tareas",
+    "empty": "No se encontraron tareas.",
+    "example": "Crea una tarea para hacer seguimiento a Globex el viernes",
+    "error": "No se pudieron cargar las tareas.",
+    "overdue": "Vencida",
+    "columns": {
+      "title": "Título",
+      "priority": "Prioridad",
+      "status": "Estado",
+      "due": "Vencimiento",
+      "assignee": "Responsable"
+    },
+    "statuses": {
+      "open": "Abierta",
+      "done": "Hecha"
+    },
+    "priorities": {
+      "low": "Baja",
+      "normal": "Normal",
+      "high": "Alta"
+    }
+  },
+  "emails": {
+    "title": "Correos",
+    "search": "Buscar correos",
+    "folder": "Carpeta",
+    "count_one": "{{count}} correo",
+    "count_other": "{{count}} correos",
+    "empty": "No se encontraron correos.",
+    "example": "Redacta un correo para María López sobre su renovación",
+    "error": "No se pudieron cargar los correos.",
+    "columns": {
+      "from": "De",
+      "to": "Para",
+      "subject": "Asunto",
+      "date": "Fecha"
+    },
+    "folders": {
+      "inbox": "Recibidos",
+      "sent": "Enviados"
+    }
+  }
+}

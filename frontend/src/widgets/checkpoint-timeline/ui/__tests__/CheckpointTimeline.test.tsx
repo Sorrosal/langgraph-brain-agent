@@ -67,6 +67,13 @@ describe('CheckpointTimeline', () => {
     expect(details).toHaveTextContent('loop');
   });
 
+  it('shows a retryable error when the history cannot be loaded', async () => {
+    vi.spyOn(api, 'get').mockRejectedValue(new Error('boom'));
+    renderWithProviders(<CheckpointTimeline threadId="t1" />);
+    expect(await screen.findByRole('alert')).toHaveTextContent('Could not load the history.');
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument();
+  });
+
   it('shows an empty state', async () => {
     vi.spyOn(api, 'get').mockResolvedValue({ data: [] });
     renderWithProviders(<CheckpointTimeline threadId="t1" />);

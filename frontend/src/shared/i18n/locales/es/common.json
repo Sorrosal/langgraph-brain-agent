@@ -1,0 +1,53 @@
+{
+  "appTagline": "Agente de negocio con cerebro",
+  "actions": {
+    "cancel": "Cancelar",
+    "save": "Guardar",
+    "delete": "Eliminar",
+    "close": "Cerrar",
+    "retry": "Reintentar",
+    "copy": "Copiar",
+    "copied": "Copiado",
+    "search": "Buscar",
+    "loading": "Cargando…"
+  },
+  "language": {
+    "label": "Idioma",
+    "en": "English",
+    "es": "Español"
+  },
+  "theme": {
+    "toLight": "Cambiar a tema claro",
+    "toDark": "Cambiar a tema oscuro"
+  },
+  "errors": {
+    "generic": "Algo ha ido mal. Inténtalo de nuevo.",
+    "network": "No se puede conectar con el servidor. Revisa tu conexión e inténtalo de nuevo.",
+    "loadFailed": "No se ha podido cargar.",
+    "unexpected": "Se ha producido un error inesperado",
+    "invalidCredentials": "Email o contraseña incorrectos",
+    "requestFailed": "La petición ha fallado (estado {{status}})",
+    "tooManyRequests": "Demasiados intentos. Espera un momento y vuelve a intentarlo.",
+    "tooManyRequestsWait": "Demasiados intentos. Vuelve a intentarlo en {{seconds}} segundos."
+  },
+  "tools": {
+    "send_email": "Enviar email",
+    "crm_search_contacts": "Buscar contactos",
+    "crm_create_contact": "Crear contacto",
+    "crm_update_deal": "Actualizar oportunidad",
+    "crm_delete_record": "Eliminar registro del CRM",
+    "create_task": "Crear tarea",
+    "list_tasks": "Listar tareas",
+    "complete_task": "Completar tarea",
+    "delete_task": "Eliminar tarea",
+    "remember": "Guardar recuerdo",
+    "recall": "Consultar memoria",
+    "read_rules": "Leer reglas",
+    "update_rules_file": "Cambiar reglas",
+    "crm_create_deal": "Crear oportunidad",
+    "crm_get_contact": "Ver contacto",
+    "crm_list_deals": "Listar oportunidades",
+    "read_email": "Leer email",
+    "search_inbox": "Buscar en la bandeja"
+  }
+}

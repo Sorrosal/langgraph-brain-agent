@@ -1,4 +1,6 @@
+export { useToolLabel } from './lib/tool-label';
 export { ActionCard } from './ui/ActionCard';
+export { RiskBadge } from './ui/RiskBadge';
 export type {
   ActionRequest,
   ApprovalDecision,

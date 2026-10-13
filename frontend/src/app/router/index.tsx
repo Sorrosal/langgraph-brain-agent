@@ -1,4 +1,5 @@
 import { lazy, Suspense } from 'react';
+import { useTranslation } from 'react-i18next';
 import { createBrowserRouter, Navigate, type RouteObject } from 'react-router-dom';
 import { env } from '@/shared/config/env';
 import { useTheme } from '@/app/providers/ThemeProvider';
@@ -10,12 +11,22 @@ import { AppLayout } from './layouts/AppLayout';
 import { AuthLayout } from './layouts/AuthLayout';
 import { RootLayout } from './layouts/RootLayout';
 
+/** Matches the page layout: title and subtitle, then two cards. */
 function PageLoader() {
+  const { t } = useTranslation();
   return (
-    <div className="flex flex-col gap-4 p-6">
-      <Skeleton className="h-8 w-48" />
-      <Skeleton className="h-48 w-full" />
-      <Skeleton className="h-48 w-full" />
+    <div
+      role="status"
+      aria-busy="true"
+      className="mx-auto flex w-full max-w-5xl flex-col gap-6 p-4 sm:p-6 lg:p-8"
+    >
+      <span className="sr-only">{t('actions.loading')}</span>
+      <div className="flex flex-col gap-2">
+        <Skeleton className="h-8 w-48" />
+        <Skeleton className="h-4 w-72 max-w-full" />
+      </div>
+      <Skeleton className="h-40 w-full rounded-[var(--radius-lg)]" />
+      <Skeleton className="h-40 w-full rounded-[var(--radius-lg)]" />
     </div>
   );
 }

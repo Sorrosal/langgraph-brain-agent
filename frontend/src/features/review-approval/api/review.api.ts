@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { api } from '@/shared/api/axios-instance';
+import { i18n } from '@/shared/i18n';
 import { threadKeys } from '@/entities/thread';
 import type { ApprovalResponse, UncertainResponse } from '@/entities/approval';
 
@@ -32,7 +33,7 @@ export function useSubmitReview(
     onSuccess: () => queryClient.invalidateQueries({ queryKey: threadKeys.detail(threadId) }),
     onError: (error) => {
       onFailed?.();
-      toast.error(error.message);
+      toast.error(error.message || i18n.t('common:errors.generic'));
     },
   });
 }

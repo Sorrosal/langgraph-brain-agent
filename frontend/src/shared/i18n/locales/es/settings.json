@@ -1,0 +1,31 @@
+{
+  "title": "Ajustes",
+  "subtitle": "Tu cuenta y el backend con el que se comunica esta aplicación.",
+  "profile": {
+    "title": "Perfil",
+    "description": "La información de tu cuenta",
+    "name": "Nombre",
+    "email": "Correo electrónico",
+    "role": "Rol"
+  },
+  "roles": {
+    "admin": "Administrador",
+    "operator": "Operador"
+  },
+  "preferences": {
+    "title": "Preferencias",
+    "description": "Se guardan en este dispositivo.",
+    "language": "Idioma",
+    "languageHint": "Se aplica a toda la aplicación.",
+    "theme": "Tema",
+    "themeHint": "Apariencia clara u oscura.",
+    "light": "Claro",
+    "dark": "Oscuro"
+  },
+  "application": {
+    "title": "Aplicación",
+    "description": "Configuración de compilación",
+    "apiUrl": "URL de la API",
+    "appName": "Nombre de la aplicación"
+  }
+}

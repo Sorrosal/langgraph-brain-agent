@@ -1,63 +1,478 @@
+/* Design system — mirrors the Evolantia platform (src/web/src/app/styles/globals.css):
+   Figtree body, Sora display, JetBrains Mono code, OKLCH tokens, violet accent, prism shell. */
+@import '@fontsource-variable/figtree/index.css';
+@import '@fontsource-variable/sora/index.css';
+@import '@fontsource-variable/jetbrains-mono/index.css';
 @import 'tailwindcss';
 
-/* Tailwind v4: register design tokens via @theme so they become utility classes */
+@custom-variant dark (&:where(.dark, .dark *));
+/* Guard reveal-on-hover patterns: touch never fires :hover. */
+@custom-variant can-hover (@media (hover: hover) and (pointer: fine));
+
 @theme {
-  --color-background: hsl(0 0% 100%);
-  --color-foreground: hsl(240 10% 3.9%);
-  --color-card: hsl(0 0% 100%);
-  --color-card-foreground: hsl(240 10% 3.9%);
-  --color-popover: hsl(0 0% 100%);
-  --color-popover-foreground: hsl(240 10% 3.9%);
-  --color-primary: hsl(240 5.9% 10%);
-  --color-primary-foreground: hsl(0 0% 98%);
-  --color-secondary: hsl(240 4.8% 95.9%);
-  --color-secondary-foreground: hsl(240 5.9% 10%);
-  --color-muted: hsl(240 4.8% 95.9%);
-  --color-muted-foreground: hsl(240 3.8% 46.1%);
-  --color-accent: hsl(240 4.8% 95.9%);
-  --color-accent-foreground: hsl(240 5.9% 10%);
-  --color-destructive: hsl(0 84.2% 60.2%);
-  --color-destructive-foreground: hsl(0 0% 98%);
-  --color-border: hsl(240 5.9% 90%);
-  --color-input: hsl(240 5.9% 90%);
-  --color-ring: hsl(240 5.9% 10%);
-  --radius: 0.5rem;
-  --sidebar-width: 240px;
-  --sidebar-width-collapsed: 64px;
+  --font-sans:
+    'Figtree Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  --font-display: 'Sora Variable', 'Figtree Variable', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono Variable', ui-monospace, 'SF Mono', Menlo, monospace;
+
+  /* shadcn names (used across the app) resolve to the runtime tokens below. */
+  --color-background: var(--c-bg);
+  --color-foreground: var(--c-fg);
+  --color-card: var(--c-bg-elevated);
+  --color-card-foreground: var(--c-fg);
+  --color-popover: var(--c-bg-elevated);
+  --color-popover-foreground: var(--c-fg);
+  --color-primary: var(--c-brand);
+  --color-primary-foreground: var(--c-brand-fg);
+  --color-secondary: var(--c-bg-muted);
+  --color-secondary-foreground: var(--c-fg);
+  --color-muted: var(--c-bg-muted);
+  --color-muted-foreground: var(--c-fg-muted);
+  /* `accent` is the selected/hover tint (shadcn semantics), cut from the brand hue. */
+  --color-accent: var(--c-brand-bg);
+  --color-accent-foreground: var(--c-brand-ink);
+  --color-destructive: var(--c-danger);
+  --color-destructive-foreground: var(--c-danger-on);
+  --color-border: var(--c-border);
+  --color-input: var(--c-border-strong);
+  --color-ring: var(--c-ring);
+
+  /* Evolantia names. */
+  --color-frame: var(--c-frame);
+  --color-glass: var(--c-glass);
+  --color-subtle: var(--c-bg-subtle);
+  --color-elevated: var(--c-bg-elevated);
+  --color-faint: var(--c-fg-faint);
+  --color-brand: var(--c-brand);
+  --color-brand-hover: var(--c-brand-hover);
+  --color-brand-bg: var(--c-brand-bg);
+  --color-brand-ink: var(--c-brand-ink);
+  --color-success: var(--c-success);
+  --color-success-bg: var(--c-success-bg);
+  --color-success-fg: var(--c-success-fg);
+  --color-success-border: var(--c-success-border);
+  --color-warning: var(--c-warning);
+  --color-warning-bg: var(--c-warning-bg);
+  --color-warning-fg: var(--c-warning-fg);
+  --color-warning-border: var(--c-warning-border);
+  --color-danger: var(--c-danger);
+  --color-danger-bg: var(--c-danger-bg);
+  --color-danger-fg: var(--c-danger-fg);
+  --color-danger-border: var(--c-danger-border);
+  --color-info: var(--c-info);
+  --color-info-bg: var(--c-info-bg);
+  --color-info-fg: var(--c-info-fg);
+  --color-info-border: var(--c-info-border);
+  --color-chat-user: var(--c-chat-user);
+
+  --text-2xs: 0.6875rem;
+  --text-2xs--line-height: 1rem;
+  /* Reading size for chat and long-form surfaces. */
+  --text-reading: 0.9375rem;
+  --text-reading--line-height: 1.55rem;
+
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 18px;
+  --radius-2xl: 24px;
+  --radius: 10px;
+
+  --sidebar-width: 15rem;
+  --sidebar-width-collapsed: 4.25rem;
+
+  /* Elevation: e1 card, e2 popover, e3 floating panel, e4 modal. */
+  --shadow-e1: var(--ev-shadow-e1);
+  --shadow-e2: var(--ev-shadow-e2);
+  --shadow-e3: var(--ev-shadow-e3);
+  --shadow-e4: var(--ev-shadow-e4);
+  --shadow-primary: var(--ev-shadow-primary);
+  --shadow-glass: var(--ev-shadow-glass);
+
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --animate-fade-in: ev-fade-in 220ms var(--ease-out) both;
+  --animate-slide-up: ev-slide-up 260ms var(--ease-out) both;
 }
 
-/* Dark mode overrides via CSS custom properties scoped to .dark */
+:root {
+  --c-frame: oklch(0.97 0.01 270);
+  --c-glass: oklch(1 0 0 / 0.62);
+  --c-glass-edge: oklch(1 0 0 / 0.75);
+  --c-bg: oklch(0.985 0.006 275);
+  --c-bg-subtle: oklch(0.965 0.012 275);
+  --c-bg-muted: oklch(0.94 0.018 270);
+  --c-bg-elevated: oklch(1 0 0);
+  --c-fg: oklch(0.2 0.03 275);
+  --c-fg-muted: oklch(0.47 0.03 275);
+  --c-fg-faint: oklch(0.52 0.03 275);
+  --c-border: oklch(0.2 0.03 275 / 0.08);
+  --c-border-strong: oklch(0.2 0.03 275 / 0.16);
+
+  --c-brand: oklch(0.48 0.22 290);
+  --c-brand-hover: oklch(0.43 0.21 290);
+  --c-brand-fg: oklch(1 0 0);
+  --c-brand-bg: oklch(0.48 0.22 290 / 0.1);
+  --c-brand-ink: oklch(0.4 0.19 290);
+
+  --c-success: oklch(0.6 0.12 165);
+  --c-success-bg: oklch(0.6 0.12 165 / 0.14);
+  --c-success-fg: oklch(0.4 0.09 165);
+  --c-success-border: oklch(0.6 0.12 165 / 0.35);
+  --c-warning: oklch(0.655 0.157 60);
+  --c-warning-bg: oklch(0.655 0.157 60 / 0.16);
+  --c-warning-fg: oklch(0.46 0.1 65);
+  --c-warning-border: oklch(0.655 0.157 60 / 0.35);
+  --c-danger: oklch(0.55 0.19 20);
+  --c-danger-bg: oklch(0.55 0.19 20 / 0.12);
+  --c-danger-fg: oklch(0.44 0.16 20);
+  --c-danger-border: oklch(0.55 0.19 20 / 0.35);
+  --c-danger-on: oklch(1 0 0);
+  --c-info: oklch(0.58 0.1 220);
+  --c-info-bg: oklch(0.58 0.1 220 / 0.12);
+  --c-info-fg: oklch(0.4 0.08 220);
+  --c-info-border: oklch(0.58 0.1 220 / 0.35);
+  --c-chat-user: oklch(0.94 0.018 270);
+
+  --c-ring: color-mix(in oklab, var(--c-brand) 60%, var(--c-fg));
+
+  --ev-shadow-e1:
+    0 1px 2px -1px oklch(0.2 0.03 275 / 0.1), 0 4px 14px -6px oklch(0.2 0.03 275 / 0.12),
+    inset 0 0 0 1px oklch(1 0 0 / 0.7);
+  --ev-shadow-e2:
+    0 4px 12px -4px oklch(0.2 0.03 275 / 0.14), 0 14px 36px -12px oklch(0.2 0.03 275 / 0.2),
+    inset 0 0 0 1px oklch(1 0 0 / 0.7);
+  --ev-shadow-e3:
+    0 10px 28px -8px oklch(0.2 0.03 275 / 0.18), 0 28px 64px -20px oklch(0.2 0.03 275 / 0.28);
+  --ev-shadow-e4:
+    0 20px 50px -12px oklch(0.2 0.03 275 / 0.3), 0 48px 100px -30px oklch(0.2 0.03 275 / 0.35);
+  --ev-shadow-primary:
+    inset 0 1px 0 0 oklch(1 0 0 / 0.3), 0 6px 18px -6px oklch(0.48 0.22 290 / 0.5);
+  --ev-shadow-glass:
+    0 10px 40px -16px oklch(0.2 0.03 275 / 0.22), inset 0 0 0 1px var(--c-glass-edge),
+    inset 0 1px 0 0 oklch(1 0 0 / 0.9);
+
+  /* Three pools of light behind the frame. */
+  --ev-blobs:
+    radial-gradient(40% 50% at 12% 10%, oklch(0.75 0.15 290 / 0.3) 0%, transparent 60%),
+    radial-gradient(35% 45% at 88% 20%, oklch(0.8 0.12 215 / 0.3) 0%, transparent 60%),
+    radial-gradient(45% 55% at 60% 100%, oklch(0.85 0.1 40 / 0.32) 0%, transparent 60%);
+  /* The AI's signature: assistant mark, composer focus, generating state. Never a background. */
+  --ev-prism: linear-gradient(
+    120deg,
+    oklch(0.62 0.2 290) 0%,
+    oklch(0.72 0.14 215) 50%,
+    oklch(0.8 0.13 40) 100%
+  );
+  --ease: cubic-bezier(0.4, 0, 0.2, 1);
+  color-scheme: light;
+}
+
 .dark {
-  --color-background: hsl(240 10% 3.9%);
-  --color-foreground: hsl(0 0% 98%);
-  --color-card: hsl(240 10% 3.9%);
-  --color-card-foreground: hsl(0 0% 98%);
-  --color-popover: hsl(240 10% 3.9%);
-  --color-popover-foreground: hsl(0 0% 98%);
-  --color-primary: hsl(0 0% 98%);
-  --color-primary-foreground: hsl(240 5.9% 10%);
-  --color-secondary: hsl(240 3.7% 15.9%);
-  --color-secondary-foreground: hsl(0 0% 98%);
-  --color-muted: hsl(240 3.7% 15.9%);
-  --color-muted-foreground: hsl(240 5% 64.9%);
-  --color-accent: hsl(240 3.7% 15.9%);
-  --color-accent-foreground: hsl(0 0% 98%);
-  --color-destructive: hsl(0 62.8% 30.6%);
-  --color-destructive-foreground: hsl(0 0% 98%);
-  --color-border: hsl(240 3.7% 15.9%);
-  --color-input: hsl(240 3.7% 15.9%);
-  --color-ring: hsl(240 4.9% 83.9%);
+  --c-frame: oklch(0.17 0.03 275);
+  --c-glass: oklch(0.22 0.025 275 / 0.62);
+  --c-glass-edge: oklch(1 0 0 / 0.1);
+  --c-bg: oklch(0.205 0.025 275);
+  --c-bg-subtle: oklch(0.235 0.025 275);
+  --c-bg-muted: oklch(0.29 0.025 275);
+  --c-bg-elevated: oklch(0.25 0.025 275);
+  --c-fg: oklch(0.96 0.01 275);
+  --c-fg-muted: oklch(0.75 0.02 275);
+  --c-fg-faint: oklch(0.68 0.02 275);
+  --c-border: oklch(1 0 0 / 0.08);
+  --c-border-strong: oklch(1 0 0 / 0.16);
+
+  --c-brand: oklch(0.75 0.13 290);
+  --c-brand-hover: oklch(0.8 0.1 290);
+  --c-brand-fg: oklch(0.18 0.05 290);
+  --c-brand-bg: oklch(0.75 0.13 290 / 0.16);
+  --c-brand-ink: oklch(0.88 0.07 290);
+
+  --c-success: oklch(0.75 0.13 165);
+  --c-success-bg: oklch(0.75 0.13 165 / 0.16);
+  --c-success-fg: oklch(0.87 0.09 165);
+  --c-success-border: oklch(0.75 0.13 165 / 0.4);
+  --c-warning: oklch(0.82 0.13 70);
+  --c-warning-bg: oklch(0.82 0.13 70 / 0.16);
+  --c-warning-fg: oklch(0.91 0.07 70);
+  --c-warning-border: oklch(0.82 0.13 70 / 0.4);
+  --c-danger: oklch(0.74 0.15 20);
+  --c-danger-bg: oklch(0.74 0.15 20 / 0.16);
+  --c-danger-fg: oklch(0.87 0.07 20);
+  --c-danger-border: oklch(0.74 0.15 20 / 0.4);
+  --c-danger-on: oklch(0.16 0.03 20);
+  --c-info: oklch(0.76 0.1 220);
+  --c-info-bg: oklch(0.76 0.1 220 / 0.14);
+  --c-info-fg: oklch(0.88 0.065 220);
+  --c-info-border: oklch(0.76 0.1 220 / 0.35);
+  --c-chat-user: oklch(0.31 0.03 280);
+
+  --ev-shadow-e1: 0 1px 2px 0 oklch(0 0 0 / 0.4), inset 0 1px 0 0 oklch(1 0 0 / 0.05);
+  --ev-shadow-e2: 0 8px 24px -8px oklch(0 0 0 / 0.6), inset 0 1px 0 0 oklch(1 0 0 / 0.07);
+  --ev-shadow-e3: 0 16px 40px -12px oklch(0 0 0 / 0.7), inset 0 1px 0 0 oklch(1 0 0 / 0.08);
+  --ev-shadow-e4: 0 28px 70px -20px oklch(0 0 0 / 0.8), inset 0 1px 0 0 oklch(1 0 0 / 0.09);
+  --ev-shadow-primary:
+    inset 0 1px 0 0 oklch(1 0 0 / 0.35), 0 6px 18px -6px oklch(0.75 0.13 290 / 0.45);
+  --ev-shadow-glass:
+    0 10px 40px -16px oklch(0 0 0 / 0.6), inset 0 0 0 1px var(--c-glass-edge),
+    inset 0 1px 0 0 oklch(1 0 0 / 0.06);
+  --ev-blobs:
+    radial-gradient(40% 50% at 12% 10%, oklch(0.5 0.2 290 / 0.35) 0%, transparent 60%),
+    radial-gradient(35% 45% at 88% 20%, oklch(0.5 0.12 215 / 0.3) 0%, transparent 60%),
+    radial-gradient(45% 55% at 60% 100%, oklch(0.45 0.1 40 / 0.25) 0%, transparent 60%);
+  color-scheme: dark;
 }
 
 @layer base {
   * {
     border-color: var(--color-border);
   }
+  html,
   body {
-    background-color: var(--color-background);
-    color: var(--color-foreground);
-    font-feature-settings:
-      'rlig' 1,
-      'calt' 1;
+    background-color: var(--c-frame);
+    background-image: var(--ev-blobs);
+    background-repeat: no-repeat;
+    background-attachment: fixed;
+    color: var(--c-fg);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
   }
+  h1,
+  h2,
+  h3 {
+    font-family: var(--font-display);
+    letter-spacing: -0.015em;
+  }
+  :focus-visible {
+    outline: 2px solid var(--c-ring);
+    outline-offset: 2px;
+  }
+  ::selection {
+    background: var(--c-brand-bg);
+  }
+}
+
+/* Panel material: translucent over the frame; opaque where backdrop-filter is unsupported. */
+@utility glass {
+  background-color: var(--c-bg);
+  box-shadow: var(--ev-shadow-glass);
+  @supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+    background-color: var(--c-glass);
+    -webkit-backdrop-filter: blur(28px) saturate(1.5);
+    backdrop-filter: blur(28px) saturate(1.5);
+  }
+}
+
+/* 1.5px gradient hairline through a mask, so the fill stays untouched. */
+@utility prism-ring {
+  position: relative;
+  &::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    padding: 1.5px;
+    background: var(--ev-prism);
+    -webkit-mask:
+      linear-gradient(#000 0 0) content-box,
+      linear-gradient(#000 0 0);
+    mask:
+      linear-gradient(#000 0 0) content-box,
+      linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    pointer-events: none;
+  }
+}
+
+@utility bg-prism {
+  background-image: var(--ev-prism);
+}
+
+/* The AI's presence: the prism as a lit sphere. Assistant avatar and brand mark only. */
+.ev-orb {
+  position: relative;
+  overflow: hidden;
+  border-radius: 9999px;
+  background: var(--ev-prism);
+  box-shadow:
+    0 8px 22px -10px oklch(0.6 0.2 290 / 0.7),
+    inset 0 -5px 10px -5px oklch(0.3 0.1 290 / 0.5);
+}
+.ev-orb::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: radial-gradient(circle at 30% 22%, oklch(1 0 0 / 0.85) 0%, oklch(1 0 0 / 0) 40%);
+}
+
+/* Typing indicator — three staggered dots. */
+.ev-typing {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+  padding: 6px 0;
+}
+.ev-typing > span {
+  width: 6px;
+  height: 6px;
+  border-radius: 9999px;
+  background: var(--c-fg-muted);
+  animation: ev-typing-dot 1.2s var(--ease) infinite;
+}
+.ev-typing > span:nth-child(2) {
+  animation-delay: 0.15s;
+}
+.ev-typing > span:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+[data-message] {
+  animation: ev-msg-in 220ms var(--ease) both;
+}
+
+.ev-skel {
+  background: linear-gradient(
+    90deg,
+    var(--c-bg-muted) 0%,
+    var(--c-bg-subtle) 50%,
+    var(--c-bg-muted) 100%
+  );
+  background-size: 800px 100%;
+  animation: ev-shimmer 1.4s infinite linear;
+}
+
+@keyframes ev-typing-dot {
+  0%,
+  60%,
+  100% {
+    opacity: 0.25;
+    transform: translateY(0);
+  }
+  30% {
+    opacity: 1;
+    transform: translateY(-2px);
+  }
+}
+@keyframes ev-msg-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes ev-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes ev-slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes ev-shimmer {
+  0% {
+    background-position: -400px 0;
+  }
+  100% {
+    background-position: 400px 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Markdown in assistant messages. */
+.ev-prose {
+  overflow-wrap: anywhere;
+}
+.ev-prose > * + * {
+  margin-top: 0.6em;
+}
+.ev-prose ul {
+  list-style: disc;
+  padding-left: 1.25rem;
+}
+.ev-prose ol {
+  list-style: decimal;
+  padding-left: 1.25rem;
+}
+.ev-prose li + li {
+  margin-top: 0.2em;
+}
+.ev-prose a {
+  color: var(--c-brand-ink);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.ev-prose strong {
+  font-weight: 600;
+}
+.ev-prose h1,
+.ev-prose h2,
+.ev-prose h3 {
+  font-weight: 600;
+  font-size: 1em;
+}
+.ev-prose code {
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  background: var(--c-bg-muted);
+  border-radius: 5px;
+  padding: 0.1em 0.35em;
+}
+.ev-prose pre {
+  background: var(--c-bg-muted);
+  border-radius: var(--radius-md);
+  padding: 0.75rem 0.9rem;
+  overflow-x: auto;
+}
+.ev-prose pre code {
+  background: none;
+  padding: 0;
+}
+.ev-prose table {
+  border-collapse: collapse;
+  font-size: 0.9em;
+  /* Wrap at word boundaries only: the table keeps a readable width and its wrapper scrolls. */
+  overflow-wrap: normal;
+}
+.ev-prose td {
+  min-width: 7rem;
+  max-width: 22rem;
+}
+.ev-prose th {
+  white-space: nowrap;
+}
+.ev-prose th,
+.ev-prose td {
+  border: 1px solid var(--c-border-strong);
+  padding: 0.3rem 0.6rem;
+  text-align: left;
+}
+.ev-prose blockquote {
+  border-left: 3px solid var(--c-border-strong);
+  padding-left: 0.75rem;
+  color: var(--c-fg-muted);
 }

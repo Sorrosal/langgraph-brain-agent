@@ -1,0 +1,31 @@
+{
+  "title": "Settings",
+  "subtitle": "Your account and the backend this app talks to.",
+  "profile": {
+    "title": "Profile",
+    "description": "Your account information",
+    "name": "Name",
+    "email": "Email",
+    "role": "Role"
+  },
+  "roles": {
+    "admin": "Admin",
+    "operator": "Operator"
+  },
+  "preferences": {
+    "title": "Preferences",
+    "description": "Saved on this device.",
+    "language": "Language",
+    "languageHint": "Used across the whole app.",
+    "theme": "Theme",
+    "themeHint": "Light or dark appearance.",
+    "light": "Light",
+    "dark": "Dark"
+  },
+  "application": {
+    "title": "Application",
+    "description": "Build-time configuration",
+    "apiUrl": "API URL",
+    "appName": "App name"
+  }
+}

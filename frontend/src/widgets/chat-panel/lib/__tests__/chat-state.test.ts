@@ -33,6 +33,7 @@ function stream(overrides: Partial<StreamState> = {}): StreamState {
     toolActivity: [],
     pendingInterrupt: null,
     error: null,
+    settled: false,
     ...overrides,
   };
 }
@@ -44,7 +45,7 @@ describe('deriveChatView', () => {
       stream(),
     );
     expect(view).toMatchObject({ status: 'interrupted', pendingInterrupt: pending, busy: true });
-    expect(view.activityLabel).toBe('Waiting for your approval');
+    expect(view.activity).toEqual({ kind: 'approval' });
   });
 
   it('lets the stream override a stale detail (run finished, refetch pending)', () => {
@@ -52,7 +53,7 @@ describe('deriveChatView', () => {
       detail({ run: { status: 'running' } }),
       stream({ runStatus: 'idle' }),
     );
-    expect(view).toMatchObject({ status: 'idle', busy: false, activityLabel: null });
+    expect(view).toMatchObject({ status: 'idle', busy: false, activity: null });
   });
 
   it('names the running tool, otherwise says Thinking', () => {
@@ -60,10 +61,10 @@ describe('deriveChatView', () => {
       runStatus: 'running',
       toolActivity: [{ id: 'c1', name: 'search', status: 'running' }],
     });
-    expect(deriveChatView(detail(), running).activityLabel).toBe('Running tool search…');
-    expect(deriveChatView(detail(), stream({ runStatus: 'running' })).activityLabel).toBe(
-      'Thinking…',
-    );
+    expect(deriveChatView(detail(), running).activity).toEqual({ kind: 'tool', name: 'search' });
+    expect(deriveChatView(detail(), stream({ runStatus: 'running' })).activity).toEqual({
+      kind: 'thinking',
+    });
   });
 
   it('hides the approval panel once a resumed run is running', () => {
@@ -80,5 +81,12 @@ describe('deriveChatView', () => {
       stream({ runStatus: 'failed', error: { code: 'run_failed', message: 'The run failed.' } }),
     );
     expect(view).toMatchObject({ failure: 'The run failed.', busy: false });
+  });
+});
+
+describe('deriveChatView failures without a message', () => {
+  it('flags a persisted failure so the panel shows the generic text', () => {
+    const view = deriveChatView(detail({ run: { status: 'failed' } }), stream());
+    expect(view.failure).toBe(true);
   });
 });

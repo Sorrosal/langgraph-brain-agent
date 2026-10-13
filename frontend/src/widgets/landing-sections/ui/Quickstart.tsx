@@ -1,15 +1,21 @@
+import { useTranslation } from 'react-i18next';
 import { CodeBlock } from '@/shared/ui/code-block';
 import { Section } from '@/shared/ui/section';
-import { QUICKSTART_CODE } from '../model/quickstart';
+import { buildQuickstartCode } from '../model/quickstart';
 
 export function Quickstart() {
+  const { t } = useTranslation('landing');
+
   return (
     <Section
       id="quickstart"
-      title="Quickstart"
-      description="Run the whole stack locally: PostgreSQL in Docker, the backend with uv, the frontend with npm."
+      title={t('quickstart.title')}
+      description={t('quickstart.description')}
     >
-      <CodeBlock code={QUICKSTART_CODE} label="quickstart commands" />
+      <CodeBlock
+        code={buildQuickstartCode((id) => t(`quickstart.steps.${id}`))}
+        label={t('quickstart.codeLabel')}
+      />
     </Section>
   );
 }

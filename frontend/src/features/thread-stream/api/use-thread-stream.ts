@@ -1,5 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query';
-import { useEffect, useReducer } from 'react';
+import { useCallback, useEffect, useReducer } from 'react';
 import { getAccessToken } from '@/shared/api/axios-instance';
 import { env } from '@/shared/config/env';
 import { threadKeys } from '@/entities/thread';
@@ -37,6 +37,9 @@ function parseJson(text: unknown): unknown {
 export function useThreadStream(threadId: string | undefined) {
   const queryClient = useQueryClient();
   const [state, dispatch] = useReducer(streamReducer, initialStreamState);
+  const settle = useCallback(() => {
+    dispatch({ type: 'settle' });
+  }, []);
 
   useEffect(() => {
     if (!threadId) return;
@@ -97,5 +100,6 @@ export function useThreadStream(threadId: string | undefined) {
     markRunStartFailed: () => {
       dispatch({ type: 'run_start_failed' });
     },
+    settle,
   };
 }

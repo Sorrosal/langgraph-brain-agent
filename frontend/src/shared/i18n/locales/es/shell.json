@@ -1,0 +1,38 @@
+{
+  "skipToContent": "Saltar al contenido",
+  "nav": {
+    "label": "Navegación principal",
+    "title": "Navegación",
+    "open": "Abrir el menú de navegación",
+    "collapse": "Contraer la barra lateral",
+    "expand": "Expandir la barra lateral",
+    "signOut": "Cerrar sesión",
+    "chat": "Chat",
+    "approvals": "Aprobaciones",
+    "inspector": "Inspector",
+    "brain": "Cerebro",
+    "data": "Datos",
+    "settings": "Ajustes",
+    "pending_one": "{{count}} pendiente",
+    "pending_other": "{{count}} pendientes"
+  },
+  "user": {
+    "menu": "Menú de usuario",
+    "settings": "Ajustes",
+    "signOut": "Cerrar sesión",
+    "signIn": "Iniciar sesión"
+  },
+  "notifications": {
+    "title": "Notificaciones",
+    "titleUnread_one": "Notificaciones, {{count}} sin leer",
+    "titleUnread_other": "Notificaciones, {{count}} sin leer",
+    "markAllRead": "Marcar todo como leído",
+    "markRead": "Marcar como leída",
+    "remove": "Eliminar notificación",
+    "empty": "No hay notificaciones",
+    "emptyHint": "Estás al día."
+  },
+  "toasts": {
+    "region": "Notificaciones"
+  }
+}

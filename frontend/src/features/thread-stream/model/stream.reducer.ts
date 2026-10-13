@@ -62,6 +62,9 @@ export interface StreamState {
   toolActivity: ToolActivity[];
   pendingInterrupt: PendingInterrupt | null;
   error: { code: string; message: string } | null;
+  /** The run finished but its messages are not persisted in the thread detail yet: keep the
+   *  streamed text on screen until the refetched detail replaces it (no blank flash). */
+  settled: boolean;
 }
 
 export type StreamAction =
@@ -69,6 +72,8 @@ export type StreamAction =
   /** `cursor` is the lastEventId when the request began; later events are never overridden. */
   | { type: 'run_started'; cursor: number }
   | { type: 'run_start_failed' }
+  /** The persisted thread caught up with the finished run. */
+  | { type: 'settle' }
   | { type: 'reset' };
 
 export const initialStreamState: StreamState = {
@@ -80,6 +85,7 @@ export const initialStreamState: StreamState = {
   toolActivity: [],
   pendingInterrupt: null,
   error: null,
+  settled: false,
 };
 
 const REASON_NODE = 'reason';
@@ -130,7 +136,14 @@ function applyEvent(state: StreamState, event: StreamEvent): StreamState {
     case 'run_completed':
       return event.data.status === 'interrupted'
         ? { ...state, runStatus: 'interrupted' }
-        : { ...initialStreamState, lastEventId: state.lastEventId, runStatus: 'idle' };
+        : {
+            ...initialStreamState,
+            lastEventId: state.lastEventId,
+            runStatus: 'idle',
+            streamingText: state.streamingText,
+            toolActivity: state.toolActivity,
+            settled: true,
+          };
     case 'run_failed':
       return {
         ...initialStreamState,
@@ -151,6 +164,10 @@ export function streamReducer(state: StreamState, action: StreamAction): StreamS
       return { ...initialStreamState, lastEventId: state.lastEventId, runStatus: 'running' };
     case 'run_start_failed':
       return { ...state, runStatus: null };
+    case 'settle':
+      return state.settled
+        ? { ...state, streamingText: '', toolActivity: [], settled: false }
+        : state;
     case 'reset':
       return initialStreamState;
   }

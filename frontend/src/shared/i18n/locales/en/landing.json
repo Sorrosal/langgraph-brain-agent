@@ -1,0 +1,284 @@
+{
+  "header": {
+    "skipToContent": "Skip to content"
+  },
+  "hero": {
+    "name": "LangGraph Brain Agent",
+    "pitch": "A business operations agent with human-in-the-loop approvals, crash-safe durable state and a long-term memory \"brain\".",
+    "highlightsLabel": "Highlights",
+    "highlights": {
+      "approvals": "Human approvals",
+      "crashSafe": "Crash-safe runs",
+      "memory": "Long-term memory",
+      "rules": "Rules as code"
+    },
+    "openApp": "Open the app",
+    "github": "View on GitHub"
+  },
+  "whatItDoes": {
+    "title": "What it does",
+    "description": "An operations assistant for a small team. It acts on email, CRM and tasks, and the rules decide what it may do alone.",
+    "useCases": {
+      "email": {
+        "title": "Email",
+        "text": "Reads and drafts messages and sends them on behalf of the team."
+      },
+      "crm": {
+        "title": "CRM",
+        "text": "Looks up contacts and deals and updates records."
+      },
+      "tasks": {
+        "title": "Tasks",
+        "text": "Creates, updates and completes tasks, and deletes them when approved."
+      }
+    },
+    "needsApproval": {
+      "title": "Needs approval",
+      "items": {
+        "externalEmail": "Emails to recipients outside @acme.com, including cc",
+        "bulkEmail": "Bulk emails to more than 5 recipients",
+        "bigDeal": "Deal updates above 10000",
+        "deleteTask": "Deleting a task"
+      }
+    },
+    "blocked": {
+      "title": "Blocked",
+      "items": {
+        "deleteCrm": "Deleting CRM records"
+      }
+    }
+  },
+  "graph": {
+    "title": "How a run flows",
+    "description": "The agent is a LangGraph state graph. Select a node to see what it does and what it guarantees."
+  },
+  "agentGraph": {
+    "ariaLabel": "Agent graph: {{nodes}}",
+    "about": "About {{node}}",
+    "guarantees": "Guarantees",
+    "nodes": {
+      "load_context": {
+        "summary": "At the start of each user turn, recalls the most relevant long-term memories (semantic search over the store) and adds them to the model context.",
+        "guarantees": {
+          "capped": "Recall is capped (5 memories by default)",
+          "degrades": "Failures degrade to a no-op"
+        }
+      },
+      "reason": {
+        "summary": "Calls the model with a system prompt rebuilt from the rule set on every call. If the model asks for tools the run goes to the approval gate; otherwise the turn ends.",
+        "guarantees": {
+          "reload": "Rule reloads apply on the next call",
+          "maxSteps": "Bounded by a max-steps limit (25 by default)",
+          "backoff": "Transient errors retried with exponential backoff"
+        }
+      },
+      "approval_gate": {
+        "summary": "Checks every tool call against the approval policy: tool metadata plus the hard rules. Calls that violate a block rule are refused; calls that require approval are marked for review.",
+        "guarantees": {
+          "blocked": "Blocked calls are never executed",
+          "strictest": "The strictest verdict wins",
+          "failClosed": "Rules fail closed"
+        }
+      },
+      "await_approval": {
+        "summary": "Pauses the graph with a LangGraph interrupt() until a human approves, edits, rejects or responds to each pending call.",
+        "guarantees": {
+          "checkpointed": "The pause is checkpointed in PostgreSQL, so it survives restarts",
+          "rechecked": "Edited calls are re-checked against block rules"
+        }
+      },
+      "resolve_uncertain": {
+        "summary": "Before tools run, asks a human about calls whose earlier execution has an unknown outcome (recorded as started in the tool ledger, but never finished).",
+        "guarantees": {
+          "choice": "The human chooses: confirm done, retry or skip",
+          "onlyUncertain": "Only calls that are still uncertain are asked about"
+        }
+      },
+      "tools": {
+        "summary": "Executes the approved tool calls through the tool ledger, keyed by thread id and tool call id, then hands the results back to the model.",
+        "guarantees": {
+          "replayed": "Succeeded calls are replayed from the ledger, not re-run",
+          "atMostOnce": "Side effects happen at most once unless a human authorizes a retry"
+        }
+      },
+      "memorize": {
+        "summary": "At the end of a turn, asks the model to extract durable facts and preferences and writes them to the long-term store.",
+        "guarantees": {
+          "optional": "Optional (memory extraction flag)",
+          "degrades": "Failures degrade to a no-op"
+        }
+      },
+      "summarize": {
+        "summary": "When the history exceeds the context budget, folds the oldest messages into a running summary so the prompt stays within bounds.",
+        "guarantees": {
+          "overBudget": "Only runs over budget",
+          "degrades": "Failures degrade to a no-op"
+        }
+      },
+      "END": {
+        "summary": "The turn is finished. The final state stays checkpointed and the thread can continue.",
+        "guarantees": {
+          "persisted": "Every step before this point was persisted"
+        }
+      }
+    }
+  },
+  "crashSafety": {
+    "title": "Crash safety, step by step",
+    "description": "What happens when the process dies while an email is being sent."
+  },
+  "crashWalkthrough": {
+    "timelineLabel": "Crash recovery timeline",
+    "stepLabel": "Step {{number}}: {{label}}",
+    "stepOf": "Step {{current}} of {{total}}",
+    "prev": "Prev",
+    "next": "Next",
+    "autoplay": "Autoplay",
+    "autoplayDisabled": "Autoplay is off because reduced motion is preferred",
+    "steps": {
+      "checkpoint": {
+        "label": "Checkpoint",
+        "title": "A checkpoint is saved after every step",
+        "description": "The graph state is written to PostgreSQL before the next step starts (synchronous durability). The run is also registered with a lease that its owner keeps renewing with a heartbeat."
+      },
+      "crash": {
+        "label": "Crash",
+        "title": "The worker crashes mid-tool",
+        "description": "The process dies while the send_email tool is running. Nothing renews the lease anymore, so it expires. The last checkpoint is intact."
+      },
+      "claim": {
+        "label": "Recover",
+        "title": "A recovery worker claims the orphaned run",
+        "description": "The recovery worker looks for runs whose lease expired and claims them with FOR UPDATE SKIP LOCKED, so two workers never take the same run. Each claim bumps a fencing token, which makes a stale owner unable to renew or finish the run."
+      },
+      "ledger": {
+        "label": "Ledger",
+        "title": "The tool ledger decides what is safe to repeat",
+        "description": "Every tool call is recorded under thread id and tool call id. A succeeded call replays its stored result instead of running again. A call left started whose tool is not retry-safe has an unknown outcome, so a human decides: confirm done, retry or skip."
+      },
+      "resume": {
+        "label": "Resume",
+        "title": "The run resumes and the email is sent exactly once",
+        "description": "The graph continues from the last checkpoint with the ledger as the source of truth. The email is never duplicated: it is either replayed from the ledger or confirmed by a human first."
+      }
+    }
+  },
+  "hitl": {
+    "title": "Human in the loop",
+    "description": "Sensitive actions wait for a person. The wait is part of the durable state, not a process held in memory.",
+    "step": "Step {{number}}",
+    "lifecycle": {
+      "pause": {
+        "label": "Pause",
+        "text": "A sensitive tool call stops the graph at an interrupt()."
+      },
+      "decision": {
+        "label": "Decision",
+        "text": "A human approves, edits the arguments, rejects, or responds with free text."
+      },
+      "resume": {
+        "label": "Resume",
+        "text": "The graph continues from the checkpoint with that decision applied."
+      }
+    },
+    "decisionsLabel": "Decisions",
+    "decisions": {
+      "approve": "approve",
+      "edit": "edit",
+      "reject": "reject",
+      "respond": "respond"
+    },
+    "notes": {
+      "persisted": "Pending approvals live in the PostgreSQL checkpoint, so they survive restarts and deploys.",
+      "unknown": "An execution whose outcome is unknown (the process died mid-tool) is never guessed: it waits for a human."
+    },
+    "uncertainTitle": "Uncertain executions",
+    "uncertain": {
+      "confirm": {
+        "label": "Confirm done",
+        "text": "The side effect did happen; keep its result."
+      },
+      "retry": {
+        "label": "Retry",
+        "text": "Run the tool again, explicitly authorized by a human."
+      },
+      "skip": {
+        "label": "Skip",
+        "text": "Do not run it; the agent is told it was skipped."
+      }
+    }
+  },
+  "brain": {
+    "title": "The brain",
+    "description": "Memory, rules and context assembly sit around the loop, so the agent knows what it knows and what it may do.",
+    "cards": {
+      "memory": {
+        "title": "Long-term memory",
+        "items": {
+          "store": "Facts, preferences and episodes kept in a PostgreSQL store",
+          "recall": "Semantic recall through pgvector",
+          "lifecycle": "Recalled at the start of a turn, extracted at the end"
+        }
+      },
+      "rules": {
+        "title": "Rules",
+        "items": {
+          "yaml": "Persona and guidelines in a YAML rule set",
+          "hard": "Hard rules: block or require approval",
+          "reload": "Hot reload; invalid rules fail closed"
+        }
+      },
+      "budget": {
+        "title": "Context budget",
+        "items": {
+          "assembled": "The prompt is assembled within a size budget",
+          "folded": "Old messages are folded into a running summary",
+          "overBudget": "Summarization only runs when the history is over budget"
+        }
+      }
+    }
+  },
+  "architecture": {
+    "title": "Architecture & stack",
+    "ariaLabel": "Architecture: the React UI talks to FastAPI, which drives the LangGraph runtime. The runtime uses PostgreSQL for checkpoints, memory, runs and the tool ledger, and OpenAI for models.",
+    "diagram": "Architecture diagram",
+    "stackLabel": "Technology stack",
+    "boxes": {
+      "react": { "title": "React", "detail": "Feature-Sliced Design UI" },
+      "api": { "title": "FastAPI", "detail": "SSE streaming, JWT auth" },
+      "runtime": { "title": "LangGraph runtime", "detail": "Graph, runner, recovery worker" },
+      "openai": { "title": "OpenAI", "detail": "Chat and embedding models" },
+      "postgres": {
+        "title": "PostgreSQL",
+        "detail": "Checkpoints, store + pgvector, runs, tool ledger"
+      }
+    }
+  },
+  "quickstart": {
+    "title": "Quickstart",
+    "description": "Run the whole stack locally: PostgreSQL in Docker, the backend with uv, the frontend with npm.",
+    "codeLabel": "quickstart commands",
+    "steps": {
+      "database": "Database (PostgreSQL + pgvector)",
+      "backend": "Backend",
+      "frontend": "Frontend"
+    }
+  },
+  "footer": {
+    "license": "Released under the MIT license.",
+    "github": "LangGraph Brain Agent on GitHub"
+  },
+  "codeBlock": {
+    "copyLabel": "Copy {{label}}"
+  },
+  "notFound": {
+    "title": "Page not found",
+    "description": "Sorry, the page you're looking for doesn't exist or has been moved.",
+    "home": "Back to home"
+  },
+  "routeError": {
+    "title": "Something went wrong",
+    "description": "The page could not be loaded. Check your connection and try again.",
+    "home": "Go to home"
+  }
+}

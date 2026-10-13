@@ -1,0 +1,53 @@
+{
+  "conversations": "Conversations",
+  "newConversation": "New conversation",
+  "untitled": "New conversation",
+  "noConversations": "No conversations yet.",
+  "noConversationsHint": "Start one and ask the agent anything.",
+  "loadConversationsFailed": "Could not load conversations.",
+  "loadConversationFailed": "This conversation could not be loaded.",
+  "conversation": "Conversation",
+  "backToConversations": "Conversations",
+  "you": "You",
+  "assistant": "Assistant",
+  "welcome": {
+    "title": "What should we get done?",
+    "subtitle": "Brain Agent reads and drafts email, manages tasks and works with your CRM. Anything sensitive waits for your approval.",
+    "emptyThread": "Send a message to start.",
+    "suggestionsLabel": "Try one of these"
+  },
+  "suggestions": {
+    "tasks": "What tasks are open this week?",
+    "contact": "Create a contact Maria Lopez (maria@globex.com) at Globex",
+    "email": "Draft an email to juan@example.com moving our meeting to Monday",
+    "memory": "Remember that I prefer meetings in the morning"
+  },
+  "composer": {
+    "label": "Message",
+    "placeholder": "Message Brain Agent…",
+    "placeholderBusy": "Waiting for the assistant…",
+    "placeholderApproval": "Resolve the pending approval to continue…",
+    "hint": "Enter to send · Shift+Enter for a new line",
+    "send": "Send"
+  },
+  "activity": {
+    "thinking": "Thinking…",
+    "runningTool": "Running: {{tool}}",
+    "waitingApproval": "Waiting for your approval"
+  },
+  "tool": {
+    "result": "Tool result",
+    "resultError": "Tool result (error)",
+    "running": "Running",
+    "done": "Done",
+    "failed": "Failed"
+  },
+  "failure": "The run failed. Send a message to retry.",
+  "jumpToLatest": "Jump to latest",
+  "sendError": {
+    "generic": "Could not send the message. Please try again.",
+    "busy": "This conversation is busy. Wait for the current run to finish or resolve the pending approval.",
+    "tooFast": "You are sending messages too fast. Please wait a moment.",
+    "tooFastWait": "You are sending messages too fast. Try again in {{seconds}} seconds."
+  }
+}

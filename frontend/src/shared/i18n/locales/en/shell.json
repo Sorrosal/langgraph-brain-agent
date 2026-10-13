@@ -1,0 +1,38 @@
+{
+  "skipToContent": "Skip to content",
+  "nav": {
+    "label": "Main navigation",
+    "title": "Navigation",
+    "open": "Open navigation menu",
+    "collapse": "Collapse sidebar",
+    "expand": "Expand sidebar",
+    "signOut": "Sign out",
+    "chat": "Chat",
+    "approvals": "Approvals",
+    "inspector": "Inspector",
+    "brain": "Brain",
+    "data": "Data",
+    "settings": "Settings",
+    "pending_one": "{{count}} pending",
+    "pending_other": "{{count}} pending"
+  },
+  "user": {
+    "menu": "User menu",
+    "settings": "Settings",
+    "signOut": "Sign out",
+    "signIn": "Sign in"
+  },
+  "notifications": {
+    "title": "Notifications",
+    "titleUnread_one": "Notifications, {{count}} unread",
+    "titleUnread_other": "Notifications, {{count}} unread",
+    "markAllRead": "Mark all read",
+    "markRead": "Mark as read",
+    "remove": "Remove notification",
+    "empty": "No notifications",
+    "emptyHint": "You're all caught up."
+  },
+  "toasts": {
+    "region": "Notifications"
+  }
+}

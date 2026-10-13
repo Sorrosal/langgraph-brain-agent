@@ -1,18 +1,21 @@
 import { ChevronLeft, ChevronRight, Pause, Play } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { usePrefersReducedMotion } from '@/shared/hooks/use-prefers-reduced-motion';
 import { cn } from '@/shared/lib/cn';
 import { Button } from '@/shared/ui/button';
+import { Card } from '@/shared/ui/card';
 import { AUTOPLAY_INTERVAL_MS, CRASH_STEPS } from '../model/steps';
 
 const LAST_INDEX = CRASH_STEPS.length - 1;
 
 export function CrashWalkthrough() {
+  const { t } = useTranslation('landing');
   const reducedMotion = usePrefersReducedMotion();
   const [index, setIndex] = useState(0);
   const [autoplayRequested, setAutoplayRequested] = useState(false);
   const autoplay = autoplayRequested && !reducedMotion;
-  const step = CRASH_STEPS[index] ?? CRASH_STEPS[0];
+  const stepId = CRASH_STEPS[index] ?? CRASH_STEPS[0];
 
   useEffect(() => {
     if (!autoplay) return;
@@ -24,89 +27,97 @@ export function CrashWalkthrough() {
     };
   }, [autoplay]);
 
-  if (!step) return null;
-
   return (
-    <div className="bg-card rounded-lg border p-6">
-      <ol className="flex items-start" aria-label="Crash recovery timeline">
-        {CRASH_STEPS.map((item, position) => (
-          <li
-            key={item.id}
-            aria-current={position === index ? 'step' : undefined}
-            className="flex flex-1 flex-col items-center gap-2 text-center"
-          >
-            <button
-              type="button"
-              onClick={() => {
-                setIndex(position);
-              }}
-              aria-label={`Step ${String(position + 1)}: ${item.label}`}
-              className={cn(
-                'focus-visible:ring-ring flex h-9 w-9 items-center justify-center rounded-full border text-sm font-semibold transition-colors duration-200 outline-none focus-visible:ring-2 motion-reduce:transition-none',
-                position === index
-                  ? 'bg-primary text-primary-foreground border-primary'
-                  : position < index
-                    ? 'bg-secondary text-secondary-foreground'
-                    : 'text-muted-foreground',
-              )}
+    <Card className="p-5 sm:p-6">
+      <ol className="flex items-start" aria-label={t('crashWalkthrough.timelineLabel')}>
+        {CRASH_STEPS.map((id, position) => {
+          const label = t(`crashWalkthrough.steps.${id}.label`);
+          return (
+            <li
+              key={id}
+              aria-current={position === index ? 'step' : undefined}
+              className="flex flex-1 flex-col items-center gap-2 text-center"
             >
-              {position + 1}
-            </button>
-            <span
-              className={cn(
-                'hidden text-xs sm:block',
-                position === index ? 'font-semibold' : 'text-muted-foreground',
-              )}
-            >
-              {item.label}
-            </span>
-          </li>
-        ))}
+              <button
+                type="button"
+                onClick={() => {
+                  setIndex(position);
+                }}
+                aria-label={t('crashWalkthrough.stepLabel', { number: position + 1, label })}
+                className={cn(
+                  'focus-visible:ring-ring flex size-11 items-center justify-center rounded-full border text-sm font-semibold transition-colors duration-200 outline-none focus-visible:ring-2 motion-reduce:transition-none sm:size-9',
+                  position === index
+                    ? 'bg-primary text-primary-foreground border-primary shadow-primary'
+                    : position < index
+                      ? 'bg-brand-bg text-brand-ink border-transparent'
+                      : 'bg-subtle text-muted-foreground border-input hover:bg-accent',
+                )}
+              >
+                {position + 1}
+              </button>
+              <span
+                className={cn(
+                  'hidden text-xs sm:block',
+                  position === index ? 'text-foreground font-semibold' : 'text-muted-foreground',
+                )}
+              >
+                {label}
+              </span>
+            </li>
+          );
+        })}
       </ol>
-      <div className="mt-6 min-h-36" aria-live={autoplay ? 'off' : 'polite'}>
-        <p className="text-muted-foreground text-xs">
-          Step {index + 1} of {CRASH_STEPS.length}
+      <div className="mt-6 min-h-52 sm:min-h-40" aria-live={autoplay ? 'off' : 'polite'}>
+        <p className="text-brand-ink text-2xs font-semibold tracking-wide uppercase">
+          {t('crashWalkthrough.stepOf', { current: index + 1, total: CRASH_STEPS.length })}
         </p>
-        <h3 className="mt-1 text-lg font-semibold">{step.title}</h3>
-        <p className="text-muted-foreground mt-2 text-sm">{step.description}</p>
+        <h3 className="mt-1 text-lg font-semibold">
+          {t(`crashWalkthrough.steps.${stepId}.title`)}
+        </h3>
+        <p className="text-muted-foreground mt-2 text-sm">
+          {t(`crashWalkthrough.steps.${stepId}.description`)}
+        </p>
       </div>
       <div className="mt-4 flex flex-wrap items-center gap-2">
         <Button
           variant="outline"
+          className="max-sm:h-11"
           size="sm"
           onClick={() => {
             setIndex((current) => Math.max(current - 1, 0));
           }}
           disabled={index === 0}
         >
-          <ChevronLeft className="mr-1 h-4 w-4" />
-          Prev
+          <ChevronLeft aria-hidden="true" />
+          {t('crashWalkthrough.prev')}
         </Button>
         <Button
           variant="outline"
+          className="max-sm:h-11"
           size="sm"
           onClick={() => {
             setIndex((current) => Math.min(current + 1, LAST_INDEX));
           }}
           disabled={index === LAST_INDEX}
         >
-          Next
-          <ChevronRight className="ml-1 h-4 w-4" />
+          {t('crashWalkthrough.next')}
+          <ChevronRight aria-hidden="true" />
         </Button>
         <Button
           variant="ghost"
+          className="max-sm:h-11"
           size="sm"
           onClick={() => {
             setAutoplayRequested((current) => !current);
           }}
           disabled={reducedMotion}
           aria-pressed={autoplay}
-          title={reducedMotion ? 'Autoplay is off because reduced motion is preferred' : undefined}
+          title={reducedMotion ? t('crashWalkthrough.autoplayDisabled') : undefined}
         >
-          {autoplay ? <Pause className="mr-1 h-4 w-4" /> : <Play className="mr-1 h-4 w-4" />}
-          Autoplay
+          {autoplay ? <Pause aria-hidden="true" /> : <Play aria-hidden="true" />}
+          {t('crashWalkthrough.autoplay')}
         </Button>
       </div>
-    </div>
+    </Card>
   );
 }

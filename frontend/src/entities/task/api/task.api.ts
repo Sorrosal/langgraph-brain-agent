@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { z } from 'zod';
 import { api } from '@/shared/api/axios-instance';
 import { taskSchema } from '../model/task.schemas';
@@ -13,5 +13,6 @@ export function useTasks(status: TaskStatus | '') {
       });
       return z.array(taskSchema).parse(data);
     },
+    placeholderData: keepPreviousData,
   });
 }

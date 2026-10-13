@@ -1,0 +1,56 @@
+{
+  "title": "Inspector de estado",
+  "subtitle": "Vista de solo lectura de los checkpoints de una conversación.",
+  "explainer": "Cada paso de una ejecución se guarda como un checkpoint, así que tras un fallo o un reinicio el agente continúa desde el último en lugar de empezar de cero.",
+  "conversation": {
+    "label": "Conversación",
+    "placeholder": "Selecciona una conversación…",
+    "untitled": "Nueva conversación",
+    "loadFailed": "No se han podido cargar las conversaciones.",
+    "none": "Aún no hay conversaciones.",
+    "startOne": "Empieza una en el chat"
+  },
+  "empty": {
+    "title": "Elige una conversación",
+    "description": "Selecciona una conversación arriba para inspeccionar sus checkpoints y su estado actual."
+  },
+  "state": {
+    "title": "Estado actual",
+    "loadFailed": "No se ha podido cargar el estado del hilo.",
+    "noSummary": "Todavía no hay resumen.",
+    "noApprovals": "No hay aprobaciones registradas.",
+    "auditLabel": "Registro de aprobaciones",
+    "action": "Acción",
+    "tool": "Herramienta",
+    "decision": "Decisión",
+    "status": {
+      "idle": "Inactivo",
+      "running": "En ejecución",
+      "interrupted": "Esperando aprobación",
+      "failed": "Fallido"
+    },
+    "decisions": {
+      "approve": "Aprobada",
+      "edit": "Editada",
+      "reject": "Rechazada"
+    }
+  },
+  "timeline": {
+    "label": "Checkpoints",
+    "loadFailed": "No se ha podido cargar el historial.",
+    "empty": "Todavía no hay checkpoints.",
+    "step": "paso {{step}}",
+    "wrote": "escribió:",
+    "next": "siguiente:",
+    "messages_one": "{{count}} mensaje",
+    "messages_other": "{{count}} mensajes",
+    "details": "Detalles del checkpoint",
+    "id": "ID",
+    "source": "Origen",
+    "stepLabel": "Paso",
+    "created": "Creado",
+    "wroteLabel": "Escribió",
+    "nextLabel": "Siguiente",
+    "messagesLabel": "Mensajes"
+  }
+}

@@ -1,12 +1,18 @@
 import type { RunStatus, ThreadDetail } from '@/entities/thread';
 import type { StreamState } from '@/features/thread-stream';
 
+export type ChatActivity =
+  | { kind: 'thinking' }
+  | { kind: 'tool'; name: string }
+  | { kind: 'approval' };
+
 export interface ChatView {
   status: RunStatus;
   pendingInterrupt: ThreadDetail['pending_interrupt'];
-  failure: string | null;
+  /** The stream's error message, or `true` for a failure without one (show the generic text). */
+  failure: string | true | null;
   /** What the assistant is doing right now, when it is doing something. */
-  activityLabel: string | null;
+  activity: ChatActivity | null;
   /** The composer is locked: a run is active or waiting for a decision. */
   busy: boolean;
 }
@@ -15,23 +21,20 @@ export interface ChatView {
 export function deriveChatView(detail: ThreadDetail, stream: StreamState): ChatView {
   const status = stream.runStatus ?? detail.run.status;
   const runningTool = stream.toolActivity.find((tool) => tool.status === 'running');
-  const activityLabel =
+  const activity: ChatActivity | null =
     status === 'interrupted'
-      ? 'Waiting for your approval'
+      ? { kind: 'approval' }
       : status === 'running'
         ? runningTool
-          ? `Running tool ${runningTool.name}…`
-          : 'Thinking…'
+          ? { kind: 'tool', name: runningTool.name }
+          : { kind: 'thinking' }
         : null;
   return {
     status,
     pendingInterrupt:
       status === 'interrupted' ? (stream.pendingInterrupt ?? detail.pending_interrupt) : null,
-    failure:
-      status === 'failed'
-        ? (stream.error?.message ?? 'The run failed. Send a message to retry.')
-        : null,
-    activityLabel,
+    failure: status === 'failed' ? (stream.error?.message ?? true) : null,
+    activity,
     busy: status === 'running' || status === 'interrupted',
   };
 }

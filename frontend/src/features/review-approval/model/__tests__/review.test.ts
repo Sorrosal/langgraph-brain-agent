@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { ActionRequest, UncertainAction } from '@/entities/approval';
-import { buildApprovalPayload, buildUncertainPayload } from '../review';
+import { i18n } from '@/shared/i18n';
+import { argsError, buildApprovalPayload, buildUncertainPayload } from '../review';
 
 function action(id: string): ActionRequest {
   return {
@@ -57,6 +58,27 @@ describe('buildApprovalPayload', () => {
   it('requires a message to respond with', () => {
     const result = buildApprovalPayload([action('a')], { a: { type: 'respond', message: ' ' } });
     expect(result).toEqual({ ok: false, errors: { a: 'Write the response to send back.' } });
+  });
+});
+
+describe('argsError', () => {
+  it('accepts a JSON object and reports anything else', () => {
+    expect(argsError('{"a": 1}')).toBeUndefined();
+    expect(argsError('{oops')).toBe('Arguments must be valid JSON.');
+    expect(argsError('"text"')).toBe('Arguments must be a JSON object.');
+  });
+
+  it('follows the active language at call time', async () => {
+    await i18n.changeLanguage('es');
+    try {
+      expect(argsError('{oops')).toBe('Los argumentos deben ser un JSON válido.');
+      expect(buildApprovalPayload([action('a')], {})).toEqual({
+        ok: false,
+        errors: { a: 'Elige una decisión.' },
+      });
+    } finally {
+      await i18n.changeLanguage('en');
+    }
   });
 });
 

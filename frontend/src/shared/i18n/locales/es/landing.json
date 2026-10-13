@@ -1,0 +1,287 @@
+{
+  "header": {
+    "skipToContent": "Saltar al contenido"
+  },
+  "hero": {
+    "name": "LangGraph Brain Agent",
+    "pitch": "Un agente de operaciones de negocio con aprobaciones humanas, estado duradero a prueba de caídas y un \"cerebro\" de memoria a largo plazo.",
+    "highlightsLabel": "Aspectos destacados",
+    "highlights": {
+      "approvals": "Aprobaciones humanas",
+      "crashSafe": "Ejecuciones a prueba de caídas",
+      "memory": "Memoria a largo plazo",
+      "rules": "Reglas como código"
+    },
+    "openApp": "Abrir la aplicación",
+    "github": "Ver en GitHub"
+  },
+  "whatItDoes": {
+    "title": "Qué hace",
+    "description": "Un asistente de operaciones para equipos pequeños. Actúa sobre el correo, el CRM y las tareas, y las reglas deciden qué puede hacer por sí solo.",
+    "useCases": {
+      "email": {
+        "title": "Correo",
+        "text": "Lee y redacta mensajes, y los envía en nombre del equipo."
+      },
+      "crm": {
+        "title": "CRM",
+        "text": "Consulta contactos y oportunidades, y actualiza registros."
+      },
+      "tasks": {
+        "title": "Tareas",
+        "text": "Crea, actualiza y completa tareas, y las elimina cuando se aprueba."
+      }
+    },
+    "needsApproval": {
+      "title": "Requiere aprobación",
+      "items": {
+        "externalEmail": "Correos a destinatarios ajenos a @acme.com, incluidos los de copia",
+        "bulkEmail": "Correos masivos a más de 5 destinatarios",
+        "bigDeal": "Actualizaciones de oportunidades por encima de 10000",
+        "deleteTask": "Eliminar una tarea"
+      }
+    },
+    "blocked": {
+      "title": "Bloqueado",
+      "items": {
+        "deleteCrm": "Eliminar registros del CRM"
+      }
+    }
+  },
+  "graph": {
+    "title": "Cómo fluye una ejecución",
+    "description": "El agente es un grafo de estados de LangGraph. Selecciona un nodo para ver qué hace y qué garantiza."
+  },
+  "agentGraph": {
+    "ariaLabel": "Grafo del agente: {{nodes}}",
+    "about": "Sobre {{node}}",
+    "guarantees": "Garantías",
+    "nodes": {
+      "load_context": {
+        "summary": "Al inicio de cada turno del usuario, recupera los recuerdos a largo plazo más relevantes (búsqueda semántica en el almacén) y los añade al contexto del modelo.",
+        "guarantees": {
+          "capped": "La recuperación está limitada (5 recuerdos por defecto)",
+          "degrades": "Si falla, no hace nada y la ejecución continúa"
+        }
+      },
+      "reason": {
+        "summary": "Llama al modelo con un prompt de sistema reconstruido a partir de las reglas en cada llamada. Si el modelo pide herramientas, la ejecución pasa a la puerta de aprobación; si no, el turno termina.",
+        "guarantees": {
+          "reload": "Los cambios en las reglas se aplican en la siguiente llamada",
+          "maxSteps": "Limitado por un máximo de pasos (25 por defecto)",
+          "backoff": "Los errores transitorios se reintentan con espera exponencial"
+        }
+      },
+      "approval_gate": {
+        "summary": "Comprueba cada llamada a herramienta con la política de aprobación: metadatos de la herramienta más las reglas estrictas. Las llamadas que incumplen una regla de bloqueo se rechazan; las que requieren aprobación se marcan para revisión.",
+        "guarantees": {
+          "blocked": "Las llamadas bloqueadas nunca se ejecutan",
+          "strictest": "Prevalece el veredicto más estricto",
+          "failClosed": "Las reglas fallan en modo cerrado"
+        }
+      },
+      "await_approval": {
+        "summary": "Pausa el grafo con un interrupt() de LangGraph hasta que una persona apruebe, edite, rechace o responda a cada llamada pendiente.",
+        "guarantees": {
+          "checkpointed": "La pausa se guarda en un checkpoint de PostgreSQL, así que sobrevive a los reinicios",
+          "rechecked": "Las llamadas editadas se vuelven a comprobar con las reglas de bloqueo"
+        }
+      },
+      "resolve_uncertain": {
+        "summary": "Antes de ejecutar herramientas, pregunta a una persona por las llamadas cuya ejecución anterior tiene un resultado desconocido (registradas como iniciadas en el registro de herramientas, pero nunca terminadas).",
+        "guarantees": {
+          "choice": "La persona elige: confirmar que se hizo, reintentar u omitir",
+          "onlyUncertain": "Solo se pregunta por las llamadas que siguen siendo inciertas"
+        }
+      },
+      "tools": {
+        "summary": "Ejecuta las llamadas aprobadas a través del registro de herramientas, identificadas por id de hilo e id de llamada, y devuelve los resultados al modelo.",
+        "guarantees": {
+          "replayed": "Las llamadas completadas se reproducen desde el registro, no se vuelven a ejecutar",
+          "atMostOnce": "Los efectos secundarios ocurren como máximo una vez, salvo que una persona autorice un reintento"
+        }
+      },
+      "memorize": {
+        "summary": "Al final de un turno, pide al modelo que extraiga hechos y preferencias duraderos y los guarda en el almacén a largo plazo.",
+        "guarantees": {
+          "optional": "Opcional (indicador de extracción de memoria)",
+          "degrades": "Si falla, no hace nada y la ejecución continúa"
+        }
+      },
+      "summarize": {
+        "summary": "Cuando el historial supera el presupuesto de contexto, resume los mensajes más antiguos en un resumen acumulado para que el prompt no se desborde.",
+        "guarantees": {
+          "overBudget": "Solo se ejecuta al superar el presupuesto",
+          "degrades": "Si falla, no hace nada y la ejecución continúa"
+        }
+      },
+      "END": {
+        "summary": "El turno ha terminado. El estado final queda guardado en un checkpoint y el hilo puede continuar.",
+        "guarantees": {
+          "persisted": "Cada paso anterior a este punto quedó guardado"
+        }
+      }
+    }
+  },
+  "crashSafety": {
+    "title": "Resistencia a caídas, paso a paso",
+    "description": "Qué ocurre cuando el proceso muere mientras se envía un correo."
+  },
+  "crashWalkthrough": {
+    "timelineLabel": "Cronología de recuperación tras una caída",
+    "stepLabel": "Paso {{number}}: {{label}}",
+    "stepOf": "Paso {{current}} de {{total}}",
+    "prev": "Anterior",
+    "next": "Siguiente",
+    "autoplay": "Reproducción automática",
+    "autoplayDisabled": "La reproducción automática está desactivada porque prefieres menos movimiento",
+    "steps": {
+      "checkpoint": {
+        "label": "Checkpoint",
+        "title": "Se guarda un checkpoint tras cada paso",
+        "description": "El estado del grafo se escribe en PostgreSQL antes de que empiece el siguiente paso (durabilidad síncrona). La ejecución también se registra con un arrendamiento (lease) que su propietario renueva con un latido (heartbeat)."
+      },
+      "crash": {
+        "label": "Caída",
+        "title": "El worker se cae en mitad de una herramienta",
+        "description": "El proceso muere mientras se ejecuta la herramienta send_email. Nadie renueva ya el lease, así que caduca. El último checkpoint está intacto."
+      },
+      "claim": {
+        "label": "Recuperación",
+        "title": "Un worker de recuperación reclama la ejecución huérfana",
+        "description": "El worker de recuperación busca ejecuciones con el lease caducado y las reclama con FOR UPDATE SKIP LOCKED, de modo que dos workers nunca toman la misma. Cada reclamación incrementa un token de vallado (fencing), por lo que un propietario obsoleto ya no puede renovar ni terminar la ejecución."
+      },
+      "ledger": {
+        "label": "Registro",
+        "title": "El registro de herramientas decide qué es seguro repetir",
+        "description": "Cada llamada a una herramienta se anota con el id del hilo y el id de la llamada. Una llamada completada reproduce su resultado guardado en lugar de ejecutarse de nuevo. Una llamada que quedó iniciada y cuya herramienta no admite reintentos seguros tiene un resultado desconocido, así que decide una persona: confirmar que se hizo, reintentar u omitir."
+      },
+      "resume": {
+        "label": "Reanudación",
+        "title": "La ejecución se reanuda y el correo se envía exactamente una vez",
+        "description": "El grafo continúa desde el último checkpoint con el registro como fuente de verdad. El correo nunca se duplica: o se reproduce desde el registro o lo confirma antes una persona."
+      }
+    }
+  },
+  "hitl": {
+    "title": "Una persona en el circuito",
+    "description": "Las acciones sensibles esperan a una persona. La espera forma parte del estado duradero, no es un proceso retenido en memoria.",
+    "step": "Paso {{number}}",
+    "lifecycle": {
+      "pause": {
+        "label": "Pausa",
+        "text": "Una llamada sensible a una herramienta detiene el grafo en un interrupt()."
+      },
+      "decision": {
+        "label": "Decisión",
+        "text": "Una persona aprueba, edita los argumentos, rechaza o responde con texto libre."
+      },
+      "resume": {
+        "label": "Reanudación",
+        "text": "El grafo continúa desde el checkpoint con esa decisión aplicada."
+      }
+    },
+    "decisionsLabel": "Decisiones",
+    "decisions": {
+      "approve": "aprobar",
+      "edit": "editar",
+      "reject": "rechazar",
+      "respond": "responder"
+    },
+    "notes": {
+      "persisted": "Las aprobaciones pendientes viven en el checkpoint de PostgreSQL, así que sobreviven a reinicios y despliegues.",
+      "unknown": "Una ejecución con resultado desconocido (el proceso murió a mitad de una herramienta) nunca se adivina: espera a una persona."
+    },
+    "uncertainTitle": "Ejecuciones inciertas",
+    "uncertain": {
+      "confirm": {
+        "label": "Confirmar que se hizo",
+        "text": "El efecto secundario sí ocurrió; se conserva su resultado."
+      },
+      "retry": {
+        "label": "Reintentar",
+        "text": "Vuelve a ejecutar la herramienta, con autorización explícita de una persona."
+      },
+      "skip": {
+        "label": "Omitir",
+        "text": "No se ejecuta; se le indica al agente que se ha omitido."
+      }
+    }
+  },
+  "brain": {
+    "title": "El cerebro",
+    "description": "La memoria, las reglas y el ensamblado del contexto rodean al bucle, para que el agente sepa lo que sabe y lo que puede hacer.",
+    "cards": {
+      "memory": {
+        "title": "Memoria a largo plazo",
+        "items": {
+          "store": "Hechos, preferencias y episodios guardados en un almacén PostgreSQL",
+          "recall": "Recuperación semántica con pgvector",
+          "lifecycle": "Se recupera al inicio de un turno y se extrae al final"
+        }
+      },
+      "rules": {
+        "title": "Reglas",
+        "items": {
+          "yaml": "Personalidad y pautas en un conjunto de reglas YAML",
+          "hard": "Reglas estrictas: bloquear o exigir aprobación",
+          "reload": "Recarga en caliente; las reglas inválidas fallan en modo cerrado"
+        }
+      },
+      "budget": {
+        "title": "Presupuesto de contexto",
+        "items": {
+          "assembled": "El prompt se ensambla dentro de un presupuesto de tamaño",
+          "folded": "Los mensajes antiguos se resumen en un resumen acumulado",
+          "overBudget": "El resumen solo se ejecuta cuando el historial supera el presupuesto"
+        }
+      }
+    }
+  },
+  "architecture": {
+    "title": "Arquitectura y stack",
+    "ariaLabel": "Arquitectura: la interfaz React habla con FastAPI, que gobierna el runtime de LangGraph. El runtime usa PostgreSQL para checkpoints, memoria, ejecuciones y el registro de herramientas, y OpenAI para los modelos.",
+    "diagram": "Diagrama de arquitectura",
+    "stackLabel": "Stack tecnológico",
+    "boxes": {
+      "react": { "title": "React", "detail": "Interfaz con Feature-Sliced Design" },
+      "api": { "title": "FastAPI", "detail": "Streaming SSE, autenticación JWT" },
+      "runtime": {
+        "title": "Runtime de LangGraph",
+        "detail": "Grafo, runner, worker de recuperación"
+      },
+      "openai": { "title": "OpenAI", "detail": "Modelos de chat y de embeddings" },
+      "postgres": {
+        "title": "PostgreSQL",
+        "detail": "Checkpoints, almacén + pgvector, ejecuciones, registro"
+      }
+    }
+  },
+  "quickstart": {
+    "title": "Inicio rápido",
+    "description": "Ejecuta todo el stack en local: PostgreSQL en Docker, el backend con uv y el frontend con npm.",
+    "codeLabel": "comandos de inicio rápido",
+    "steps": {
+      "database": "Base de datos (PostgreSQL + pgvector)",
+      "backend": "Backend",
+      "frontend": "Frontend"
+    }
+  },
+  "footer": {
+    "license": "Publicado bajo la licencia MIT.",
+    "github": "LangGraph Brain Agent en GitHub"
+  },
+  "codeBlock": {
+    "copyLabel": "Copiar {{label}}"
+  },
+  "notFound": {
+    "title": "Página no encontrada",
+    "description": "Lo sentimos, la página que buscas no existe o se ha movido.",
+    "home": "Volver al inicio"
+  },
+  "routeError": {
+    "title": "Algo ha ido mal",
+    "description": "No se ha podido cargar la página. Revisa tu conexión e inténtalo de nuevo.",
+    "home": "Ir al inicio"
+  }
+}

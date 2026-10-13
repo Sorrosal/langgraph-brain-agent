@@ -53,7 +53,7 @@ describe('BrainMemories', () => {
     expect(await screen.findByText('Enter some text')).toBeInTheDocument();
     expect(post).not.toHaveBeenCalled();
 
-    await userEvent.selectOptions(screen.getByLabelText('Memory kind'), 'preference');
+    await userEvent.click(screen.getByRole('radio', { name: 'Preference' }));
     await userEvent.type(screen.getByLabelText('Memory text'), 'Likes tea');
     await userEvent.click(screen.getByRole('button', { name: 'Add memory' }));
     await waitFor(() => {
@@ -62,6 +62,23 @@ describe('BrainMemories', () => {
     await waitFor(() => {
       expect(invalidate).toHaveBeenCalledWith({ queryKey: ['memories'] });
     });
+  });
+
+  it('explains what memories are when there are none', async () => {
+    vi.spyOn(api, 'get').mockResolvedValue({ data: [] });
+    renderWithProviders(<BrainMemories />);
+    expect(await screen.findByText('No memories yet.')).toBeInTheDocument();
+    expect(screen.getByText(/the agent also learns them on its own/)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Open chat' })).toHaveAttribute('href', '/app/chat');
+  });
+
+  it('shows an error state and retries', async () => {
+    const get = vi.spyOn(api, 'get').mockRejectedValueOnce(new Error('boom'));
+    get.mockResolvedValue({ data: [memory] });
+    renderWithProviders(<BrainMemories />);
+    expect(await screen.findByText('Could not load memories.')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(await screen.findByText('Works at Acme')).toBeInTheDocument();
   });
 
   it('deletes only after confirmation', async () => {

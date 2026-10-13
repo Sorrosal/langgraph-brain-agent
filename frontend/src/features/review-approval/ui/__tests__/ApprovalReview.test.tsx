@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -80,15 +80,63 @@ describe('ApprovalReview', () => {
   it('keeps submit disabled until every action has a decision', async () => {
     renderReview(approval(email, del));
     expect(submit()).toBeDisabled();
-    await choose('send_email', 'Approve');
+    expect(screen.getAllByText('Needs decision')).toHaveLength(2);
+    expect(screen.getByText('0 of 2 decided')).toBeInTheDocument();
+    await choose('Send email', 'Approve');
     expect(submit()).toBeDisabled();
+    expect(screen.getAllByText('Needs decision')).toHaveLength(1);
+    expect(screen.getByText('1 of 2 decided')).toBeInTheDocument();
     await choose('delete_file', 'Reject');
     expect(submit()).toBeEnabled();
+    expect(screen.queryByText('Needs decision')).not.toBeInTheDocument();
+  });
+
+  it('shows a friendly tool name, the risk, the reason and readable arguments', () => {
+    renderReview(
+      approval({ ...email, args: { to: 'a@b.co', body: 'Line one\nLine two', urgent: true } }),
+    );
+    const card = screen.getByRole('region', { name: 'Action Send email' });
+    expect(within(card).getByRole('heading', { name: 'Send email' })).toBeInTheDocument();
+    expect(within(card).getByText('High risk')).toBeInTheDocument();
+    expect(within(card).getByText('Sends email')).toBeInTheDocument();
+    expect(within(card).getByText('a@b.co')).toBeInTheDocument();
+    expect(within(card).getByLabelText('Body')).toHaveTextContent('Line one Line two');
+    expect(within(card).getByText('Yes')).toBeInTheDocument();
+    expect(within(card).getByText('Raw JSON')).toBeInTheDocument();
+  });
+
+  it('falls back to the raw tool name for unknown tools', () => {
+    renderReview(approval(del));
+    expect(screen.getByRole('heading', { name: 'delete_file' })).toBeInTheDocument();
+    expect(screen.getByText('Medium risk')).toBeInTheDocument();
+  });
+
+  it('validates edited JSON as you type', async () => {
+    renderReview(approval(email));
+    await choose('Send email', 'Edit');
+    await replaceText(/arguments/i, '{broken');
+    expect(await screen.findByRole('alert')).toHaveTextContent('Arguments must be valid JSON.');
+    expect(screen.getByLabelText(/arguments/i)).toHaveAttribute('aria-invalid', 'true');
+    await replaceText(/arguments/i, '[1]');
+    expect(await screen.findByRole('alert')).toHaveTextContent('Arguments must be a JSON object.');
+    await replaceText(/arguments/i, '{"to": "z@z.zz"}');
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('re-enables the form and shows the error when sending fails', async () => {
+    post.mockRejectedValue(new Error('Server down'));
+    renderReview(approval(email));
+    await choose('Send email', 'Approve');
+    await userEvent.click(submit());
+    expect(await screen.findByRole('alert')).toHaveTextContent('Server down');
+    await waitFor(() => {
+      expect(submit()).toBeEnabled();
+    });
   });
 
   it('posts all decisions at once with the backend payload shape', async () => {
     const onSubmitting = renderReview(approval(email, del));
-    await choose('send_email', 'Edit');
+    await choose('Send email', 'Edit');
     await replaceText(/arguments/i, '{"to": "z@z.zz"}');
     await choose('delete_file', 'Reject');
     await userEvent.type(screen.getByLabelText(/reason/i), 'nope');
@@ -109,7 +157,7 @@ describe('ApprovalReview', () => {
 
   it('shows an error and does not post invalid JSON', async () => {
     renderReview(approval(email));
-    await choose('send_email', 'Edit');
+    await choose('Send email', 'Edit');
     await replaceText(/arguments/i, '{broken');
     await userEvent.click(submit());
     expect(await screen.findByRole('alert')).toHaveTextContent('Arguments must be valid JSON.');
@@ -118,7 +166,7 @@ describe('ApprovalReview', () => {
 
   it('answers with a message instead of running the tool', async () => {
     renderReview(approval(email));
-    await choose('send_email', 'Respond');
+    await choose('Send email', 'Respond');
     await userEvent.type(screen.getByLabelText(/response/i), 'Use SMS instead');
     await userEvent.click(submit());
     await waitFor(() => {

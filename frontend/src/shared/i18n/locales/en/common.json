@@ -1,0 +1,53 @@
+{
+  "appTagline": "Business agent with a brain",
+  "actions": {
+    "cancel": "Cancel",
+    "save": "Save",
+    "delete": "Delete",
+    "close": "Close",
+    "retry": "Retry",
+    "copy": "Copy",
+    "copied": "Copied",
+    "search": "Search",
+    "loading": "Loading…"
+  },
+  "language": {
+    "label": "Language",
+    "en": "English",
+    "es": "Español"
+  },
+  "theme": {
+    "toLight": "Switch to light theme",
+    "toDark": "Switch to dark theme"
+  },
+  "errors": {
+    "generic": "Something went wrong. Please try again.",
+    "network": "Unable to reach the server. Check your connection and try again.",
+    "loadFailed": "This could not be loaded.",
+    "unexpected": "An unexpected error occurred",
+    "invalidCredentials": "Invalid email or password",
+    "requestFailed": "Request failed with status {{status}}",
+    "tooManyRequests": "Too many attempts. Please wait a moment and try again.",
+    "tooManyRequestsWait": "Too many attempts. Try again in {{seconds}} seconds."
+  },
+  "tools": {
+    "send_email": "Send email",
+    "crm_search_contacts": "Search contacts",
+    "crm_create_contact": "Create contact",
+    "crm_update_deal": "Update deal",
+    "crm_delete_record": "Delete CRM record",
+    "create_task": "Create task",
+    "list_tasks": "List tasks",
+    "complete_task": "Complete task",
+    "delete_task": "Delete task",
+    "remember": "Save memory",
+    "recall": "Recall memories",
+    "read_rules": "Read rules",
+    "update_rules_file": "Change rules",
+    "crm_create_deal": "Create deal",
+    "crm_get_contact": "Open contact",
+    "crm_list_deals": "List deals",
+    "read_email": "Read email",
+    "search_inbox": "Search inbox"
+  }
+}

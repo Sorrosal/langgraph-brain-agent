@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { z } from 'zod';
 import { api } from '@/shared/api/axios-instance';
 import { memorySchema } from '../model/memory.schemas';
@@ -21,6 +21,8 @@ export function useMemories(kind: MemoryKind | null) {
       });
       return memoriesSchema.parse(data);
     },
+    // keep the list on screen while another kind loads
+    placeholderData: keepPreviousData,
   });
 }
 
@@ -33,5 +35,6 @@ export function useMemorySearch(q: string) {
       return memoriesSchema.parse(data);
     },
     enabled: q.trim().length > 0,
+    placeholderData: keepPreviousData,
   });
 }

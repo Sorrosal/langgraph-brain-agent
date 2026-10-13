@@ -10,7 +10,13 @@ interface TabsProps<T extends string> {
 /** Minimal controlled tab strip; the caller renders the active panel. */
 export function Tabs<T extends string>({ tabs, value, onChange, className }: TabsProps<T>) {
   return (
-    <div role="tablist" className={cn('flex gap-1 border-b', className)}>
+    <div
+      role="tablist"
+      className={cn(
+        'bg-muted inline-flex w-fit max-w-full gap-1 overflow-x-auto rounded-[var(--radius-md)] p-1',
+        className,
+      )}
+    >
       {tabs.map((tab) => (
         <button
           key={tab.id}
@@ -21,10 +27,10 @@ export function Tabs<T extends string>({ tabs, value, onChange, className }: Tab
             onChange(tab.id);
           }}
           className={cn(
-            '-mb-px border-b-2 px-4 py-2 text-sm transition-colors',
+            'rounded-[var(--radius-sm)] px-3.5 py-1.5 text-sm font-medium whitespace-nowrap transition-colors',
             tab.id === value
-              ? 'border-primary font-medium'
-              : 'text-muted-foreground hover:text-foreground border-transparent',
+              ? 'bg-elevated text-foreground shadow-e1'
+              : 'text-muted-foreground hover:text-foreground',
           )}
         >
           {tab.label}

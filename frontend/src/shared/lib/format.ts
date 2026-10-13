@@ -1,3 +1,12 @@
+import { currentLanguage } from '@/shared/i18n';
+
+const LOCALES = { en: 'en-US', es: 'es-ES' } as const;
+
+/** BCP 47 locale of the active UI language. */
+export function activeLocale(): string {
+  return LOCALES[currentLanguage()];
+}
+
 export function formatDate(
   date: Date | string | number,
   options: Intl.DateTimeFormatOptions = {
@@ -5,12 +14,12 @@ export function formatDate(
     month: 'short',
     day: 'numeric',
   },
-  locale = 'en-US',
+  locale = activeLocale(),
 ): string {
   return new Intl.DateTimeFormat(locale, options).format(new Date(date));
 }
 
-export function formatCurrency(amount: number, currency = 'USD', locale = 'en-US'): string {
+export function formatCurrency(amount: number, currency = 'USD', locale = activeLocale()): string {
   return new Intl.NumberFormat(locale, {
     style: 'currency',
     currency,
@@ -20,7 +29,7 @@ export function formatCurrency(amount: number, currency = 'USD', locale = 'en-US
 export function formatNumber(
   value: number,
   options: Intl.NumberFormatOptions = {},
-  locale = 'en-US',
+  locale = activeLocale(),
 ): string {
   return new Intl.NumberFormat(locale, options).format(value);
 }
@@ -34,7 +43,7 @@ export function formatRelativeTime(date: Date | string | number): string {
   const diffHrs = Math.round(diffMin / 60);
   const diffDays = Math.round(diffHrs / 24);
 
-  const rtf = new Intl.RelativeTimeFormat('en', { numeric: 'auto' });
+  const rtf = new Intl.RelativeTimeFormat(currentLanguage(), { numeric: 'auto' });
 
   if (Math.abs(diffDays) >= 1) return rtf.format(diffDays, 'day');
   if (Math.abs(diffHrs) >= 1) return rtf.format(diffHrs, 'hour');
@@ -44,5 +53,5 @@ export function formatRelativeTime(date: Date | string | number): string {
 
 export function truncate(text: string, maxLength: number): string {
   if (text.length <= maxLength) return text;
-  return `${text.slice(0, maxLength)}...`;
+  return `${text.slice(0, maxLength)}…`;
 }

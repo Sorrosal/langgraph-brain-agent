@@ -1,0 +1,109 @@
+{
+  "page": {
+    "title": "Cerebro",
+    "description": "Lo que recuerda el agente y las reglas que sigue."
+  },
+  "tabs": {
+    "memories": "Recuerdos",
+    "rules": "Reglas"
+  },
+  "kinds": {
+    "fact": "Hecho",
+    "preference": "Preferencia",
+    "episode": "Episodio"
+  },
+  "kindHints": {
+    "fact": "Algo que es cierto, como dónde trabaja alguien.",
+    "preference": "Cómo le gusta a alguien que se hagan las cosas.",
+    "episode": "Algo que ocurrió, como una decisión pasada."
+  },
+  "memories": {
+    "add": {
+      "title": "Añadir un recuerdo",
+      "description": "Enseña al agente algo que debe recordar en futuras conversaciones.",
+      "kindLabel": "Tipo de recuerdo",
+      "textLabel": "Texto del recuerdo",
+      "placeholder": "Algo que el agente debería recordar…",
+      "submit": "Añadir recuerdo",
+      "errors": {
+        "required": "Escribe algún texto",
+        "tooLong": "Máximo 2000 caracteres"
+      }
+    },
+    "filter": {
+      "kindLabel": "Filtrar por tipo",
+      "allKinds": "Todos los tipos",
+      "searchLabel": "Buscar recuerdos",
+      "searchPlaceholder": "Busca recuerdos por significado…"
+    },
+    "count_one": "{{count}} recuerdo",
+    "count_other": "{{count}} recuerdos",
+    "card": {
+      "match": "coincidencia {{score}}",
+      "fromChat": "De un chat",
+      "createdAt": "Añadido {{date}}"
+    },
+    "empty": {
+      "title": "Aún no hay recuerdos.",
+      "description": "Los recuerdos son los hechos, preferencias y episodios que el agente conserva entre conversaciones. Añade uno arriba o simplemente conversa: el agente también los aprende por su cuenta.",
+      "openChat": "Abrir el chat",
+      "searchTitle": "Ningún recuerdo coincide con tu búsqueda.",
+      "searchDescription": "Prueba con otras palabras. La búsqueda se basa en el significado, no en el texto exacto.",
+      "clearSearch": "Borrar búsqueda",
+      "kindTitle": "Aún no hay recuerdos de este tipo.",
+      "kindDescription": "Añade uno arriba o pide al agente que recuerde algo.",
+      "showAll": "Mostrar todos los tipos"
+    },
+    "loadError": "No se pudieron cargar los recuerdos.",
+    "delete": {
+      "label": "Eliminar recuerdo",
+      "title": "¿Eliminar este recuerdo?",
+      "description": "El agente dejará de recordarlo."
+    }
+  },
+  "rules": {
+    "loadError": "No se pudieron cargar las reglas.",
+    "version": "Versión",
+    "readOnly": "Solo lectura",
+    "readOnlyNote": "Solo los administradores pueden editar las reglas. Puedes leerlas aquí, y el agente las sigue en cada conversación.",
+    "saved": "Reglas guardadas — versión {{version}}",
+    "persona": {
+      "title": "Personalidad",
+      "description": "Cómo se presenta el agente y cómo habla.",
+      "empty": "No hay personalidad definida."
+    },
+    "guidelines": {
+      "title": "Directrices",
+      "description": "Preferencias que el agente pondera al responder. Las de mayor prioridad van primero.",
+      "empty": "No hay directrices definidas.",
+      "priorityShort": "P{{priority}}",
+      "priority": "Prioridad {{priority}}"
+    },
+    "hardRules": {
+      "title": "Reglas estrictas",
+      "description": "Límites que se aplican a las herramientas decida lo que decida el modelo.",
+      "empty": "No hay reglas estrictas definidas.",
+      "actions": {
+        "block": "Bloqueada",
+        "require_approval": "Requiere aprobación"
+      },
+      "risk": "Riesgo: {{level}}",
+      "levels": {
+        "low": "bajo",
+        "medium": "medio",
+        "high": "alto"
+      },
+      "reason": "Motivo",
+      "tool": "Herramienta"
+    },
+    "files": {
+      "title": "Archivos de reglas",
+      "description": "El YAML que origina todo lo anterior.",
+      "chatHint": "También puedes cambiar las reglas pidiéndoselo al agente en el chat. Usa la herramienta <code>update_rules_file</code>, que siempre te pide aprobación antes de guardar.",
+      "unsaved": "Cambios sin guardar",
+      "save": "Guardar {{name}}",
+      "discard": "Descartar cambios",
+      "errorTitle": "No se guardaron las reglas"
+    }
+  }
+}
