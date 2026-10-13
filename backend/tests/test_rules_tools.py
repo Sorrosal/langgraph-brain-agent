@@ -41,10 +41,12 @@ async def test_update_rules_file_is_admin_only_validated_and_needs_approval(
     operator = await users.create("o@acme.com", "x", "Op")
     read_rules, update = build_rules_tools(tmp_path, engine, users, asyncio.Lock())
 
-    def call(user_id: str, content: str) -> object:
-        return update.ainvoke(
-            {"filename": "default.yaml", "content": content},
-            config={"configurable": {"user_id": user_id}},
+    async def call(user_id: str, content: str) -> str:
+        return str(
+            await update.ainvoke(
+                {"filename": "default.yaml", "content": content},
+                config={"configurable": {"user_id": user_id}},
+            )
         )
 
     assert "no-crm-deletion" in await read_rules.ainvoke({})

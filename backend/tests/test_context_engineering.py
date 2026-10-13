@@ -3,7 +3,13 @@
 from datetime import UTC, datetime
 from typing import Any
 
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
+from langchain_core.messages import (
+    AIMessage,
+    AnyMessage,
+    HumanMessage,
+    SystemMessage,
+    ToolMessage,
+)
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.store.memory import InMemoryStore
 
@@ -130,7 +136,7 @@ async def test_stable_system_prompt_and_context_right_before_the_user_message() 
 
 def test_long_tool_results_of_earlier_turns_are_cleared_in_the_prompt_only() -> None:
     long = "x" * (CLEAR_TOOL_RESULT_CHARS + 1)
-    messages = [
+    messages: list[AnyMessage] = [
         HumanMessage("read it", id="h1"),
         tool_call("read_email", {"message_id": "m"}, "c1"),
         ToolMessage(long, tool_call_id="c1", id="t1"),
