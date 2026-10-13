@@ -1,6 +1,7 @@
 """Assembly of the agent graph."""
 
 from collections.abc import Callable, Sequence
+from datetime import UTC, datetime
 from typing import Any
 
 from langchain_core.language_models import BaseChatModel, LanguageModelInput
@@ -120,7 +121,7 @@ def build_graph(
     if rules is not None:
         engine = rules
         prompt = lambda extra: build_system_prompt(  # noqa: E731
-            engine.ruleset, extra_context=extra
+            engine.ruleset, now=datetime.now(UTC), extra_context=extra
         )
         policy = CompositeApprovalPolicy(RulesApprovalPolicy(engine), policy)
     reason = make_reason_node(bound_model, system_prompt=prompt, max_steps=max_steps)

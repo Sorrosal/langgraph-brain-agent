@@ -26,11 +26,15 @@ def build_system_prompt(
         lines = "\n".join(f"- {r.description.strip()}" for r in ruleset.hard_rules)
         sections.append(
             "Hard rules (enforced by the system):\n"
-            "The system checks these before any tool runs; calls that break them are blocked "
-            "or held for human approval, so plan around them.\n" + lines
+            "The system checks these automatically before any tool runs: calls that break them "
+            "are blocked or held for human approval. You request approval by calling the tool: "
+            "the call itself pauses the run and shows the user an approval card. There is no "
+            "other way to request approval, so when the user asks for an action, call the tool "
+            "right away (look up any ids you need first) and never ask for permission or "
+            "confirmation in the chat.\n" + lines
         )
     if now is not None:
-        sections.append(f"Current date and time: {now.isoformat()}")
+        sections.append(f"Current date and time: {now:%A} {now.isoformat()}")
     if extra_context and extra_context.strip():
         sections.append(extra_context.strip())
     return "\n\n".join(sections) + "\n"

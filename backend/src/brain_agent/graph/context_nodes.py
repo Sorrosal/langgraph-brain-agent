@@ -27,7 +27,10 @@ EXTRACTION_INSTRUCTIONS = (
     "Extract durable information worth remembering for future conversations from the last "
     "exchange: stable facts about the user or their business, explicit preferences, or notable "
     "episodes (what was decided or done). Skip small talk, anything temporary and anything "
-    f"already obvious. Return at most {MAX_EXTRACTED_MEMORIES} short, self-contained items; "
+    "already obvious. Never store the assistant's own rules, limits or capabilities (for example "
+    "which actions need approval): those come from the system and change. Do not store a request "
+    "as an episode unless it was actually carried out, and do not turn a single request into a "
+    f"preference. Return at most {MAX_EXTRACTED_MEMORIES} short, self-contained items; "
     "return none if nothing qualifies."
 )
 
