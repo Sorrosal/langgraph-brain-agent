@@ -30,6 +30,15 @@ def _severity(verdict: PolicyVerdict) -> tuple[bool, int]:
     return verdict.blocked, RISK_ORDER.index(verdict.risk)
 
 
+def strictest(*verdicts: PolicyVerdict | None) -> PolicyVerdict | None:
+    """The most severe verdict (block > approval by risk); the earliest wins ties."""
+    found: PolicyVerdict | None = None
+    for verdict in verdicts:
+        if verdict is not None and (found is None or _severity(verdict) > _severity(found)):
+            found = verdict
+    return found
+
+
 class ApprovalPolicy(Protocol):
     """Evaluates one tool call; ``None`` means it can run without approval.
 
@@ -67,11 +76,4 @@ class CompositeApprovalPolicy:
         self._policies = policies
 
     def evaluate(self, tool_call: ToolCall, tool: BaseTool | None) -> PolicyVerdict | None:
-        strictest: PolicyVerdict | None = None
-        for policy in self._policies:
-            verdict = policy.evaluate(tool_call, tool)
-            if verdict is not None and (
-                strictest is None or _severity(verdict) > _severity(strictest)
-            ):
-                strictest = verdict
-        return strictest
+        return strictest(*(policy.evaluate(tool_call, tool) for policy in self._policies))

@@ -127,6 +127,7 @@ def build_crm_tools(repo: CrmRepository) -> list[BaseTool]:
             SearchContactsArgs,
             search_contacts,
             "low",
+            read_only=True,
         ),
         make_tool(
             "crm_get_contact",
@@ -134,6 +135,7 @@ def build_crm_tools(repo: CrmRepository) -> list[BaseTool]:
             GetContactArgs,
             get_contact,
             "low",
+            read_only=True,
         ),
         make_tool(
             "crm_create_contact",
@@ -149,6 +151,7 @@ def build_crm_tools(repo: CrmRepository) -> list[BaseTool]:
             ListDealsArgs,
             list_deals,
             "low",
+            read_only=True,
         ),
         make_tool(
             "crm_create_deal",

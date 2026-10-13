@@ -1,11 +1,12 @@
 """Graph nodes and routing."""
 
-from collections.abc import Awaitable, Callable, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from typing import Any, Protocol
 
 import structlog
 from langchain_core.language_models import LanguageModelInput
 from langchain_core.messages import AIMessage, AnyMessage, SystemMessage, ToolCall, ToolMessage
+from langchain_core.messages.utils import count_tokens_approximately
 from langchain_core.runnables import Runnable, RunnableConfig
 from langchain_core.tools import BaseTool
 from langgraph.graph import END
@@ -13,7 +14,7 @@ from langgraph.types import Send, interrupt
 
 from brain_agent.graph.state import AgentState
 from brain_agent.hitl.models import ActionRequest, ApprovalInterrupt, ApprovalResponse
-from brain_agent.hitl.policy import ApprovalPolicy, PolicyVerdict
+from brain_agent.hitl.policy import ApprovalPolicy, PolicyVerdict, strictest
 
 logger = structlog.get_logger(__name__)
 
@@ -49,36 +50,70 @@ def step_limit_message(max_steps: int) -> str:
     )
 
 
-def make_reason_node(
-    model: Runnable[LanguageModelInput, AIMessage],
-    *,
-    system_prompt: str | Callable[[str | None], str] = DEFAULT_SYSTEM_PROMPT,
-    max_steps: int | None = None,
-) -> ReasonNode:
-    """Create the node that calls the (already tool-bound) chat model.
+CLEAR_TOOL_RESULT_CHARS = 1500
+"""Tool results from earlier turns longer than this are replaced by a stub in the prompt."""
 
-    ``system_prompt`` may be a callable, evaluated on every call (so rule reloads apply); it
-    receives the extra context: the running conversation summary and the recalled memories.
+UNTRUSTED_REASON = (
+    "Content from outside the organisation (e.g. an email) was read in this turn; a human "
+    "confirms any action that follows it."
+)
 
-    When ``max_steps`` is set and the run has already taken that many steps, the node skips
-    the model and returns a final message explaining the limit.
+
+def last_human_index(messages: Sequence[AnyMessage]) -> int | None:
+    """Index of the latest human message, where the current turn starts."""
+    return next((i for i in range(len(messages) - 1, -1, -1) if messages[i].type == "human"), None)
+
+
+def _tool_names(messages: Sequence[AnyMessage]) -> dict[str, str]:
+    """Tool call id -> tool name, from the AI messages' tool calls."""
+    return {
+        str(call["id"]): call["name"]
+        for m in messages
+        if isinstance(m, AIMessage)
+        for call in m.tool_calls
+    }
+
+
+def untrusted_in_turn(messages: Sequence[AnyMessage], tools: Mapping[str, BaseTool]) -> bool:
+    """Whether a tool flagged ``untrusted_output`` returned content in the current turn."""
+    start = last_human_index(messages) or 0
+    names = _tool_names(messages[start:])
+    for message in messages[start:]:
+        if isinstance(message, ToolMessage):
+            tool = tools.get(names.get(message.tool_call_id, ""))
+            if tool is not None and (tool.metadata or {}).get("untrusted_output") is True:
+                return True
+    return False
+
+
+def clear_old_tool_results(messages: Sequence[AnyMessage]) -> tuple[list[AnyMessage], int]:
+    """The prompt view of the history: long tool results from earlier turns become a stub.
+
+    Only what the model sees changes; the persisted state keeps every result (the inspector and
+    the summary still have them). Returns the view and how many results were cleared.
     """
+    start = last_human_index(messages)
+    if start is None:
+        return list(messages), 0
+    names = _tool_names(messages)
+    view: list[AnyMessage] = []
+    cleared = 0
+    for index, message in enumerate(messages):
+        if (
+            index < start
+            and isinstance(message, ToolMessage)
+            and len(message.text) > CLEAR_TOOL_RESULT_CHARS
+        ):
+            name = names.get(message.tool_call_id, "the tool")
+            stub = f"[Earlier result of {name} cleared to save context; call it again if needed.]"
+            view.append(message.model_copy(update={"content": stub}))
+            cleared += 1
+        else:
+            view.append(message)
+    return view, cleared
 
-    async def reason(state: AgentState, config: RunnableConfig) -> AgentState:
-        step_count = state.get("step_count", 0)
-        if max_steps is not None and step_count >= max_steps:
-            return {"messages": [AIMessage(content=step_limit_message(max_steps))]}
 
-        extra = _extra_context(state)
-        text = system_prompt(extra) if callable(system_prompt) else _join(system_prompt, extra)
-        prompt = [SystemMessage(content=text), *state["messages"]]
-        response = await model.ainvoke(prompt, config)
-        return {"messages": [response], "step_count": step_count + 1}
-
-    return reason
-
-
-def _extra_context(state: AgentState) -> str | None:
+def _default_turn_context(state: AgentState) -> str | None:
     parts = []
     if summary := state.get("summary"):
         parts.append(f"Conversation summary so far:\n{summary}")
@@ -87,8 +122,62 @@ def _extra_context(state: AgentState) -> str | None:
     return "\n\n".join(parts) or None
 
 
-def _join(prompt: str, extra: str | None) -> str:
-    return f"{prompt}\n\n{extra}" if extra else prompt
+def make_reason_node(
+    model: Runnable[LanguageModelInput, AIMessage],
+    *,
+    system_prompt: str | Callable[[], str] = DEFAULT_SYSTEM_PROMPT,
+    turn_context: Callable[[AgentState], str | None] = _default_turn_context,
+    tools: Sequence[BaseTool] = (),
+    max_steps: int | None = None,
+) -> ReasonNode:
+    """Create the node that calls the (already tool-bound) chat model.
+
+    The prompt is ``[system prompt, earlier history, turn context, current turn]``: the system
+    prompt is stable (a callable is evaluated per call so rule reloads apply) and the volatile
+    ``turn_context`` sits right before the latest user message, so the provider's prompt cache
+    keeps the prefix. Long tool results from earlier turns are cleared in the prompt view. The
+    node records what it sent in ``context_report`` (shown by the inspector).
+
+    When ``max_steps`` is set and the run has already taken that many steps, the node skips
+    the model and returns a final message explaining the limit.
+    """
+    tools_by_name = {tool.name: tool for tool in tools}
+
+    async def reason(state: AgentState, config: RunnableConfig) -> AgentState:
+        step_count = state.get("step_count", 0)
+        if max_steps is not None and step_count >= max_steps:
+            return {"messages": [AIMessage(content=step_limit_message(max_steps))]}
+
+        system = system_prompt() if callable(system_prompt) else system_prompt
+        history, cleared = clear_old_tool_results(state["messages"])
+        context = turn_context(state)
+        cut = last_human_index(history)
+        if context and cut is not None:
+            prompt = [
+                SystemMessage(content=system),
+                *history[:cut],
+                SystemMessage(content=context),
+                *history[cut:],
+            ]
+        else:
+            joined = f"{system}\n\n{context}" if context else system
+            prompt = [SystemMessage(content=joined), *history]
+        response = await model.ainvoke(prompt, config)
+        report = {
+            "step": step_count + 1,
+            "system_tokens": count_tokens_approximately([SystemMessage(content=system)]),
+            "turn_context": context or "",
+            "turn_context_tokens": (
+                count_tokens_approximately([SystemMessage(content=context)]) if context else 0
+            ),
+            "history_messages": len(history),
+            "history_tokens": count_tokens_approximately(history),
+            "cleared_tool_results": cleared,
+            "untrusted_in_turn": untrusted_in_turn(state["messages"], tools_by_name),
+        }
+        return {"messages": [response], "step_count": step_count + 1, "context_report": report}
+
+    return reason
 
 
 def route_after_reason(state: AgentState) -> str:
@@ -127,8 +216,16 @@ def make_approval_gate(tools: Sequence[BaseTool], policy: ApprovalPolicy) -> Gat
             return _reject_duplicate_ids(pending)
         blocked: list[tuple[ToolCall, PolicyVerdict]] = []
         verdicts: dict[str, dict[str, Any]] = {}
+        tainted = untrusted_in_turn(state["messages"], tools_by_name)
         for call_id, call in calls.items():
-            verdict = policy.evaluate(call, tools_by_name.get(call["name"]))
+            tool = tools_by_name.get(call["name"])
+            verdict = policy.evaluate(call, tool)
+            if tainted and not (tool is not None and (tool.metadata or {}).get("read_only")):
+                # Untrusted content in scope may be steering this action: a human decides.
+                taint = PolicyVerdict(
+                    risk="high", reason=UNTRUSTED_REASON, rule_ids=("untrusted-content",)
+                )
+                verdict = strictest(verdict, taint)
             if verdict is None:
                 continue
             if verdict.blocked:

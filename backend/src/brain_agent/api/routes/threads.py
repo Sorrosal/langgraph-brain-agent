@@ -4,10 +4,11 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import datetime
 from typing import Annotated, Any, Literal
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import APIRouter, Query, Request
 from langchain_core.messages import AIMessage, BaseMessage, ToolMessage
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from brain_agent.api.auth import Container, CurrentUser
 from brain_agent.api.ratelimit import enforce
@@ -29,6 +30,21 @@ class CreateThread(BaseModel):
 
 class SendMessage(BaseModel):
     content: str = Field(min_length=1, max_length=8000)
+    timezone: str | None = Field(default=None, max_length=64)
+    """IANA time zone of the user's device, e.g. ``Europe/Madrid``; unknown zones are dropped."""
+    language: Literal["en", "es"] | None = None
+    """Language of the user's interface."""
+
+    @field_validator("timezone")
+    @classmethod
+    def _known_zone(cls, value: str | None) -> str | None:
+        if not value:
+            return None
+        try:
+            ZoneInfo(value)
+        except (ZoneInfoNotFoundError, ValueError):
+            return None
+        return value
 
 
 class ThreadOut(BaseModel):
@@ -67,6 +83,8 @@ class ThreadDetail(ThreadOut):
     pending_interrupt: PendingInterrupt | None
     run: RunOut
     approvals: list[dict[str, Any]]
+    context_report: dict[str, Any] | None = None
+    """What the agent's last model call was given (sections and approximate tokens)."""
 
 
 class CheckpointOut(BaseModel):
@@ -164,6 +182,7 @@ async def get_thread(thread_id: str, container: Container, user: CurrentUser) ->
         pending_interrupt=pending,
         run=await _run_status(container, thread_id, pending is not None),
         approvals=values.get("approvals", []),
+        context_report=values.get("context_report"),
     )
 
 
@@ -190,11 +209,23 @@ async def post_message(
     with admission(container.supervisor, thread_id):
         if await runner.get_pending_interrupt(thread_id) is not None:
             raise ThreadBusyError(thread_id, approval_pending=True)
+        session = {
+            key: value
+            for key, value in {
+                "user_name": user.display_name,
+                "role": user.role,
+                "timezone": body.timezone,
+                "language": body.language,
+            }.items()
+            if value
+        }
         title = " ".join(body.content.split())[:TITLE_LENGTH]
         await container.threads.touch(thread_id, title_if_empty=title)
         container.supervisor.start(
             thread_id,
-            lambda sink: runner.run(thread_id, body.content, user_id=user.id, sink=sink),
+            lambda sink: runner.run(
+                thread_id, body.content, user_id=user.id, session=session, sink=sink
+            ),
         )
     return RunAccepted(run=RunOut(status="running"))
 

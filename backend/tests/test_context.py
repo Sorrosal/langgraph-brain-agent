@@ -35,9 +35,12 @@ def _config(thread: str = "t", user: str = "alice") -> Any:
 
 
 def _system(model: ScriptedChatModel, call: int) -> str:
-    first = model.inputs[call][0]
-    assert isinstance(first, SystemMessage)
-    return str(first.content)
+    """All system text the model got on ``call`` (stable prompt + per-turn context), minus the
+    clock line so two calls of the same turn compare equal."""
+    texts = [str(m.content) for m in model.inputs[call] if isinstance(m, SystemMessage)]
+    assert texts
+    lines = "\n".join(texts).splitlines()
+    return "\n".join(line for line in lines if not line.startswith("- Current date and time"))
 
 
 def _extraction(*items: tuple[str, str]) -> AIMessage:

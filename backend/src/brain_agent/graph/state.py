@@ -22,3 +22,7 @@ class AgentState(TypedDict):
     """Audit trail of human decisions: action id, tool name and decision type."""
     pending_review: NotRequired[dict[str, Any] | None]
     """Verdicts the approval gate persisted for ``await_approval`` (AI message id, verdicts)."""
+    session: NotRequired[dict[str, str]]
+    """Who is talking and from where (user_name, role, language, timezone), set per message."""
+    context_report: NotRequired[dict[str, Any]]
+    """What the last model call was given: sections, approximate tokens, cleared results."""

@@ -6,6 +6,7 @@ from typing import Any
 from langchain_core.tools import BaseTool, ToolException
 from pydantic import BaseModel, Field, ValidationError, field_validator
 
+from brain_agent.brain.prompt import UNTRUSTED_TAG
 from brain_agent.errors import IntegrationError
 from brain_agent.integrations.email import EmailGateway, EmailMessage, OutgoingEmail
 from brain_agent.tools.support import idempotency_key_or_new, make_tool, to_json
@@ -13,6 +14,13 @@ from brain_agent.tools.support import idempotency_key_or_new, make_tool, to_json
 BODY_LIMIT = 4000
 SEARCH_LIMIT_MAX = 50
 _SEPARATORS = re.compile(r"[,;]")
+
+
+def _untrusted(payload: str) -> str:
+    """Spotlight email content as outside data. JSON may escape ``/`` as ``\\/``, so a body
+    cannot close the tag early."""
+    escaped = payload.replace(f"</{UNTRUSTED_TAG}", f"<\\/{UNTRUSTED_TAG}")
+    return f'<{UNTRUSTED_TAG} source="email">\n{escaped}\n</{UNTRUSTED_TAG}>'
 
 
 def _split_recipients(value: Any) -> Any:
@@ -77,11 +85,11 @@ def build_email_tools(gateway: EmailGateway) -> list[BaseTool]:
             found = await gateway.search(query, folder="inbox", limit=limit)
         except IntegrationError as exc:
             raise ToolException(str(exc)) from exc
-        return to_json([_truncated(m) for m in found])
+        return _untrusted(to_json([_truncated(m) for m in found]))
 
     async def read_email(message_id: str) -> str:
         try:
-            return to_json(_truncated(await gateway.get(message_id)))
+            return _untrusted(to_json(_truncated(await gateway.get(message_id))))
         except IntegrationError as exc:
             raise ToolException(str(exc)) from exc
 
@@ -103,6 +111,8 @@ def build_email_tools(gateway: EmailGateway) -> list[BaseTool]:
             SearchInboxArgs,
             search_inbox,
             "low",
+            read_only=True,
+            untrusted_output=True,
         ),
         make_tool(
             "read_email",
@@ -110,5 +120,7 @@ def build_email_tools(gateway: EmailGateway) -> list[BaseTool]:
             ReadEmailArgs,
             read_email,
             "low",
+            read_only=True,
+            untrusted_output=True,
         ),
     ]

@@ -64,7 +64,7 @@ def build_rules_tools(
         return f"Saved {filename}; rules version {engine.ruleset.version_hash[:12]} is in force."
 
     update_rules_file.handle_tool_error = True
-    read_rules.metadata = {"risk": "low", "retry_safe": True}
+    read_rules.metadata = {"risk": "low", "retry_safe": True, "read_only": True}
     # Approval is enforced in code, so no rule file can switch it off. Rewriting the same text
     # is harmless, so a replay after a crash is safe.
     update_rules_file.metadata = {

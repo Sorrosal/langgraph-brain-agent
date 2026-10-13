@@ -1,7 +1,7 @@
 """Nodes that assemble context around the reasoning loop: recall, memorize and summarize."""
 
 from collections.abc import Awaitable
-from typing import Any, Protocol
+from typing import Any, Literal, Protocol
 
 import structlog
 from langchain_core.language_models import BaseChatModel
@@ -11,7 +11,7 @@ from langgraph.config import get_store
 from pydantic import BaseModel
 
 from brain_agent.brain.context import ContextBudget, compact_messages, over_budget
-from brain_agent.brain.memory import MemoryKind, MemoryService, format_memories
+from brain_agent.brain.memory import MemoryKind, MemoryRecord, MemoryService, format_memories
 from brain_agent.graph.state import AgentState
 from brain_agent.tools.memory_tools import thread_id_of, user_id_of
 
@@ -22,12 +22,16 @@ MEMORIZE_NODE = "memorize"
 SUMMARIZE_NODE = "summarize"
 
 MAX_EXTRACTED_MEMORIES = 3
+RELATED_MEMORIES = 8
 
 EXTRACTION_INSTRUCTIONS = (
     "Extract durable information worth remembering for future conversations from the last "
     "exchange: stable facts about the user or their business, explicit preferences, or notable "
     "episodes (what was decided or done). Skip small talk, anything temporary and anything "
-    "already obvious. Never store the assistant's own rules, limits or capabilities (for example "
+    "already obvious. You also get the user's existing related memories with their ids: when the "
+    "new information refines or contradicts one, return an update with its id instead of a "
+    "duplicate; when it makes one obsolete, return a delete with its id. Never store the "
+    "assistant's own rules, limits or capabilities (for example "
     "which actions need approval): those come from the system and change. Do not store a request "
     "as an episode unless it was actually carried out, and do not turn a single request into a "
     f"preference. Return at most {MAX_EXTRACTED_MEMORIES} short, self-contained items; "
@@ -36,6 +40,9 @@ EXTRACTION_INSTRUCTIONS = (
 
 
 class ExtractedMemory(BaseModel):
+    action: Literal["add", "update", "delete"] = "add"
+    memory_id: str | None = None
+    """Id of the existing memory an ``update`` or ``delete`` refers to."""
     kind: MemoryKind
     text: str
 
@@ -81,7 +88,15 @@ def _last_turn(state: AgentState) -> str | None:
     start = next((i for i in range(len(messages) - 1, -1, -1) if messages[i].type == "human"), None)
     if start is None:
         return None
-    return "\n".join(f"{m.type}: {m.text}" for m in messages[start:] if m.text)
+    # Tool output is left out: it may be outside content (an email) and must not become memory.
+    return "\n".join(f"{m.type}: {m.text}" for m in messages[start:] if m.text and m.type != "tool")
+
+
+def _known(memories: list[MemoryRecord]) -> str:
+    if not memories:
+        return "Existing related memories: none."
+    lines = "\n".join(f"- id={m.id} ({m.kind}) {m.text}" for m in memories)
+    return f"Existing related memories:\n{lines}"
 
 
 def make_memorize(model: BaseChatModel) -> ContextNode:
@@ -97,19 +112,33 @@ def make_memorize(model: BaseChatModel) -> ContextNode:
         if not transcript:
             return {}
         try:
+            service = MemoryService(get_store())
+            user_id, thread_id = user_id_of(config), thread_id_of(config)
+            known = await service.recall(user_id, transcript, limit=RELATED_MEMORIES)
             result = await extractor.ainvoke(
-                [SystemMessage(content=EXTRACTION_INSTRUCTIONS), HumanMessage(content=transcript)],
+                [
+                    SystemMessage(content=EXTRACTION_INSTRUCTIONS),
+                    HumanMessage(content=f"{_known(known)}\n\nLast exchange:\n{transcript}"),
+                ],
                 config,
             )
-            service = MemoryService(get_store())
             parsed = ExtractedMemories.model_validate(result)
+            ids = {m.id for m in known}
             for item in parsed.items[:MAX_EXTRACTED_MEMORIES]:
-                if item.text.strip():
+                # Only memories shown to the model can be changed or removed.
+                target = item.memory_id if item.memory_id in ids else None
+                if item.action == "delete":
+                    if target:
+                        await service.forget(user_id, target)
+                elif not item.text.strip():
+                    continue
+                elif item.action == "update" and target:
+                    await service.replace(
+                        user_id, target, item.kind, item.text, source_thread_id=thread_id
+                    )
+                else:
                     await service.remember(
-                        user_id_of(config),
-                        item.kind,
-                        item.text,
-                        source_thread_id=thread_id_of(config),
+                        user_id, item.kind, item.text, source_thread_id=thread_id
                     )
         except Exception:
             logger.exception("memory_extraction_failed")

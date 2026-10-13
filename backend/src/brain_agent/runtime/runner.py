@@ -146,9 +146,13 @@ class AgentRunner:
         message: str,
         *,
         user_id: str = DEFAULT_USER_ID,
+        session: Mapping[str, str] | None = None,
         sink: EventSink | None = None,
     ) -> RunResult:
         """Send a user message on ``thread_id`` and run the agent until it stops.
+
+        ``session`` (user name, role, language, time zone) is stored in the state with the
+        message, so approvals and crash recovery keep it.
 
         Raises:
             ThreadBusyError: if the thread has unfinished work that is not a ``failed`` run
@@ -165,6 +169,8 @@ class AgentRunner:
             await self._abandon_failed_work(thread_id, config, pending, record.last_error)
         # A new user message starts a new run, so the step budget starts again.
         update: AgentState = {"messages": [HumanMessage(content=message)], "step_count": 0}
+        if session:
+            update["session"] = dict(session)
         token = await self._execute(
             thread_id, update, user_id, operation="run", reset_attempts=True, sink=sink
         )

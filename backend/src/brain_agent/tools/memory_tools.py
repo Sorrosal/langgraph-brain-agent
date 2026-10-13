@@ -49,7 +49,7 @@ async def recall(
 
 # Saving is deduplicated, so replaying it after a crash is harmless.
 remember.metadata = {"risk": "low", "retry_safe": True}
-recall.metadata = {"risk": "low", "retry_safe": True}
+recall.metadata = {"risk": "low", "retry_safe": True, "read_only": True}
 
 
 def memory_tools() -> list[BaseTool]:

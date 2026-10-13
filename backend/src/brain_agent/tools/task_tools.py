@@ -75,6 +75,7 @@ def build_task_tools(repo: TaskRepository) -> list[BaseTool]:
             ListTasksArgs,
             list_tasks,
             "low",
+            read_only=True,
         ),
         make_tool(
             "complete_task",

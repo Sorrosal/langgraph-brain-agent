@@ -40,7 +40,10 @@ async def test_plain_answer_ends_after_one_reasoning_step() -> None:
     assert model.bound_tool_names == []
     first_input = model.inputs[0]
     assert isinstance(first_input[0], SystemMessage)
-    assert first_input[1:] == [HumanMessage(content="hi", id=first_input[1].id)]
+    # The per-turn context block sits right before the latest user message.
+    assert isinstance(first_input[1], SystemMessage)
+    assert "Current date and time" in str(first_input[1].content)
+    assert first_input[2:] == [HumanMessage(content="hi", id=first_input[2].id)]
 
 
 async def test_tool_call_executes_tool_then_returns_final_answer() -> None:

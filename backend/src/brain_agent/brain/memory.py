@@ -105,6 +105,19 @@ class MemoryService:
             raise ValueError("memory text must not be empty")
         return await self._put(self._namespace(user_id, kind), kind, text, source_thread_id)
 
+    async def replace(
+        self,
+        user_id: str,
+        memory_id: str,
+        kind: MemoryKind,
+        text: str,
+        *,
+        source_thread_id: str | None,
+    ) -> MemoryRecord:
+        """Replace one of the user's memories with a corrected or refined version."""
+        await self.forget(user_id, memory_id)
+        return await self.remember(user_id, kind, text, source_thread_id=source_thread_id)
+
     async def add_org_knowledge(self, text: str, *, source: str | None = None) -> MemoryRecord:
         """Add a shared fact visible to every user (no agent tool does this)."""
         return await self._put(_ORG_NAMESPACE, "fact", text, source)

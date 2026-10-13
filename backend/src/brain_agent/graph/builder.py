@@ -1,7 +1,6 @@
 """Assembly of the agent graph."""
 
 from collections.abc import Callable, Sequence
-from datetime import UTC, datetime
 from typing import Any
 
 from langchain_core.language_models import BaseChatModel, LanguageModelInput
@@ -17,7 +16,7 @@ from langgraph.types import RetryPolicy
 
 from brain_agent.brain.context import ContextBudget
 from brain_agent.brain.policy import RulesApprovalPolicy
-from brain_agent.brain.prompt import build_system_prompt
+from brain_agent.brain.prompt import build_system_prompt, build_turn_context
 from brain_agent.brain.rules import RulesEngine
 from brain_agent.graph.context_nodes import (
     LOAD_CONTEXT_NODE,
@@ -51,6 +50,14 @@ from brain_agent.persistence.tool_ledger import ToolLedger
 from brain_agent.tools.idempotency import make_resolve_uncertain_node, make_tools_node
 
 AgentGraph = CompiledStateGraph[AgentState, None, AgentState, AgentState]
+
+
+def _turn_context(state: AgentState) -> str:
+    """Local date and time, who is talking, the running summary and recalled memories."""
+    return build_turn_context(
+        session=state.get("session"), summary=state.get("summary"), memories=state.get("context")
+    )
+
 
 DEFAULT_MAX_STEPS = 25
 DEFAULT_RECALL_LIMIT = 5
@@ -116,15 +123,19 @@ def build_graph(
     bound_model: Runnable[LanguageModelInput, AIMessage] = (
         model.bind_tools(tools) if tools else model
     )
-    prompt: str | Callable[[str | None], str] = system_prompt
+    prompt: str | Callable[[], str] = system_prompt
     policy = approval_policy or MetadataApprovalPolicy()
     if rules is not None:
         engine = rules
-        prompt = lambda extra: build_system_prompt(  # noqa: E731
-            engine.ruleset, now=datetime.now(UTC), extra_context=extra
-        )
+        prompt = lambda: build_system_prompt(engine.ruleset)  # noqa: E731
         policy = CompositeApprovalPolicy(RulesApprovalPolicy(engine), policy)
-    reason = make_reason_node(bound_model, system_prompt=prompt, max_steps=max_steps)
+    reason = make_reason_node(
+        bound_model,
+        system_prompt=prompt,
+        turn_context=_turn_context,
+        tools=tools,
+        max_steps=max_steps,
+    )
 
     builder = StateGraph(AgentState)
     builder.add_node(REASON_NODE, reason, retry_policy=retry_policy)
