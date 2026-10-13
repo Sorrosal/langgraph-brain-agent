@@ -52,5 +52,22 @@
     "wroteLabel": "Escribió",
     "nextLabel": "Siguiente",
     "messagesLabel": "Mensajes"
+  },
+  "context": {
+    "title": "Contexto del modelo",
+    "subtitle": "Lo que recibió la última llamada al modelo, paso {{step}}. Los tokens son aproximados.",
+    "empty": "Todavía no hay ninguna llamada al modelo en esta conversación.",
+    "system": "Prompt estable",
+    "systemHint": "Personalidad, directrices y reglas. El proveedor lo cachea.",
+    "history": "Historial",
+    "historyHint_one": "{{count}} mensaje",
+    "historyHint_other": "{{count}} mensajes",
+    "turn": "Contexto del turno",
+    "turnHint": "Fecha, usuario, resumen y recuerdos; se renueva en cada turno.",
+    "tokens": "~{{count}} tokens",
+    "cleared_one": "{{count}} resultado antiguo retirado",
+    "cleared_other": "{{count}} resultados antiguos retirados",
+    "untrusted": "Se ha leído contenido externo en este turno: las acciones requieren aprobación",
+    "showTurn": "Ver el contexto del turno"
   }
 }

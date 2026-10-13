@@ -23,6 +23,10 @@ Landing page: <https://sorrosal.github.io/langgraph-brain-agent/>
   edits, rejects or answers them.
 - **Rules fail closed.** Hard rules in `rules/*.yaml` are enforced in code before any tool
   runs. The service refuses to start without valid rules that define at least one hard rule.
+- **Context engineering.** A stable, cacheable system prompt; a per-turn context block (local
+  date, user, summary, memories); email content spotlighted as untrusted and any write after
+  it held for approval; old tool results cleared from the prompt; behaviour evals in
+  `backend/evals/`. See [docs/architecture.md](docs/architecture.md#context-engineering).
 - **Long-term memory.** Per-user and organisation memories live in a pgvector-backed store and
   are recalled into each turn.
 

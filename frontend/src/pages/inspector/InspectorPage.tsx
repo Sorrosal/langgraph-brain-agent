@@ -5,7 +5,11 @@ import { useThreads } from '@/entities/thread';
 import { formatRelativeTime } from '@/shared/lib/format';
 import { Button } from '@/shared/ui/button';
 import { Skeleton } from '@/shared/ui/skeleton';
-import { CheckpointTimeline, ThreadStateSummary } from '@/widgets/checkpoint-timeline';
+import {
+  CheckpointTimeline,
+  ContextReport,
+  ThreadStateSummary,
+} from '@/widgets/checkpoint-timeline';
 
 export default function InspectorPage() {
   const { t } = useTranslation('inspector');
@@ -81,6 +85,7 @@ export default function InspectorPage() {
       {threadId ? (
         <>
           <ThreadStateSummary threadId={threadId} />
+          <ContextReport threadId={threadId} />
           <CheckpointTimeline key={threadId} threadId={threadId} />
         </>
       ) : (

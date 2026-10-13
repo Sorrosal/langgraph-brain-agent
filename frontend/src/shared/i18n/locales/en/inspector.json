@@ -52,5 +52,22 @@
     "wroteLabel": "Wrote",
     "nextLabel": "Next",
     "messagesLabel": "Messages"
+  },
+  "context": {
+    "title": "Model context",
+    "subtitle": "What the agent's last model call was given, step {{step}}. Token counts are approximate.",
+    "empty": "No model call yet in this conversation.",
+    "system": "Stable prompt",
+    "systemHint": "Persona, guidelines and rules. Cached by the provider.",
+    "history": "History",
+    "historyHint_one": "{{count}} message",
+    "historyHint_other": "{{count}} messages",
+    "turn": "Turn context",
+    "turnHint": "Date, user, summary and memories, refreshed every turn.",
+    "tokens": "~{{count}} tokens",
+    "cleared_one": "{{count}} old tool result cleared",
+    "cleared_other": "{{count}} old tool results cleared",
+    "untrusted": "Outside content read in this turn: actions need approval",
+    "showTurn": "Show the turn context"
   }
 }

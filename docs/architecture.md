@@ -117,6 +117,41 @@ reflects the checkpointed state. A comment line (`: keep-alive`) is sent after
 An uncertain tool execution follows the same pattern through `resolve_uncertain` and
 `POST /threads/{id}/uncertain` (see [reliability.md](reliability.md)).
 
+## Context engineering
+
+What the model sees on every call, and why:
+
+```text
+[system]  stable prompt: persona, guidelines, hard-rule summary, untrusted-content guidance
+[history] earlier turns; long tool results of earlier turns replaced by a stub
+[system]  turn context: local date/time, who is talking, running summary, recalled memories
+[human]   the latest user message, then this turn's tool calls and results
+```
+
+- **Stable prefix.** The system prompt only changes when the rules change, so the provider's
+  prompt cache keeps the prefix. Everything volatile sits in the turn-context block right
+  before the latest user message (`brain/prompt.py`, `graph/nodes.py`).
+- **Who is talking.** `POST /threads/{id}/messages` accepts the device `timezone` and UI
+  `language`; the server adds the user's name and role. They are stored in the state
+  (`session`), so approvals and crash recovery keep them.
+- **Untrusted content.** `read_email` and `search_inbox` are flagged `untrusted_output` and wrap
+  their result in `<untrusted_content>` (spotlighting; a body cannot close the tag). If such a
+  tool returned content in the current turn, the approval gate requires a human decision for
+  every tool that is not `read_only`, whatever the rules say: a deterministic fence in the
+  spirit of Microsoft's FIDES, not a prompt heuristic. Tool output never reaches memory
+  extraction.
+- **Tool-result clearing.** Tool results longer than 1500 characters from earlier turns are
+  replaced by a stub in the prompt view only; the checkpointed state keeps them.
+- **Memory upkeep.** Extraction sees the user's related memories with their ids and returns
+  `add`, `update` or `delete` operations (only on memories it was shown), so corrections
+  replace stale facts instead of piling up duplicates. It never stores the assistant's own
+  rules or capabilities.
+- **Observability.** Each model call records `context_report` (approximate tokens per section,
+  cleared results, untrusted content in scope, the turn-context text); the inspector shows it.
+- **Behaviour evals.** `backend/evals/` runs the real model against in-memory CRM, tasks and
+  email with the repo's rules (`uv run python evals/run.py`). It writes nothing to PostgreSQL
+  and creates no cloud resources; the only cost is the model calls. Not part of CI.
+
 ## Rules evaluation order
 
 Per tool call, in `approval_gate`:
