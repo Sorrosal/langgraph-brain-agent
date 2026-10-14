@@ -1,0 +1,65 @@
+name: Behaviour evals
+
+# Manual only: every run calls the real model (a few cents of OpenAI usage) and creates no
+# other resources. Needs the repository secret OPENAI_API_KEY.
+on:
+  workflow_dispatch:
+    inputs:
+      suite:
+        description: Suite to run
+        type: choice
+        options: [all, context-model, behaviour, context-static]
+        default: all
+      filter:
+        description: Behaviour suite only - run cases whose id contains this text
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  evals:
+    name: Run behaviour evals
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      ENVIRONMENT: test
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: "backend/uv.lock"
+
+      - name: Install Python
+        run: uv python install
+
+      - name: Install dependencies
+        run: uv sync --locked
+
+      - name: Check the secret
+        run: |
+          if [ -z "$OPENAI_API_KEY" ]; then
+            echo "::error::Add the OPENAI_API_KEY repository secret to run the evals."
+            exit 1
+          fi
+
+      - name: Run evals
+        env:
+          SUITE: ${{ inputs.suite }}
+          FILTER: ${{ inputs.filter }}
+        run: uv run python -m evals.run --suite "$SUITE" -k "$FILTER"
+
+      - name: Keep the report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-report
+          path: backend/evals/reports/

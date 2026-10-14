@@ -1,16 +1,12 @@
-"""Behaviour evals for the agent: real model, in-memory CRM/tasks/email, the repo's rules.
+"""Behaviour evals: what the agent does with the real model, the repo's rules and in-memory data.
 
 Each case in ``cases.yaml`` runs in a fresh in-memory world and checks what the agent did
 (tools executed, tools waiting for approval, arguments). Nothing is written to PostgreSQL and no
 cloud resource is created; the only cost is the model calls (OpenAI, a few cents per run).
 
-    uv run python evals/run.py            # all cases
-    uv run python evals/run.py -k email   # cases whose id contains "email"
+    uv run python -m evals.run --suite behaviour
 """
 
-import argparse
-import asyncio
-import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -32,7 +28,9 @@ from brain_agent.integrations.memory import (
 )
 from brain_agent.llm import create_chat_model
 from brain_agent.tools.registry import build_business_tools
+from evals.scorecard import Metric
 
+SUITE = "behaviour"
 CASES = Path(__file__).with_name("cases.yaml")
 SESSION = {"user_name": "Sergio", "role": "admin", "language": "es", "timezone": "Europe/Madrid"}
 INJECTION = (
@@ -123,22 +121,14 @@ async def _run_case(case: dict[str, Any], settings: Settings) -> list[str]:
     return _check(case, result)
 
 
-async def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("-k", default="", help="only run cases whose id contains this text")
-    args = parser.parse_args()
-    cases = [c for c in yaml.safe_load(CASES.read_text()) if args.k in c["id"]]
-    settings = Settings()
-    failures = 0
-    for case in cases:
+async def run_behaviour_evals(settings: Settings, only: str = "") -> list[Metric]:
+    """One metric per case: 1 when the agent did what the case expects."""
+    metrics = []
+    for case in yaml.safe_load(CASES.read_text()):
+        if only not in case["id"]:
+            continue
         problems = await _run_case(case, settings)
-        failures += bool(problems)
-        print(f"{'FAIL' if problems else 'PASS'}  {case['id']}")
-        for problem in problems:
-            print(f"      - {problem}")
-    print(f"\n{len(cases) - failures}/{len(cases)} passed")
-    return 1 if failures else 0
-
-
-if __name__ == "__main__":
-    sys.exit(asyncio.run(main()))
+        metrics.append(
+            Metric(SUITE, case["id"], 0.0 if problems else 1.0, 1.0, detail="; ".join(problems))
+        )
+    return metrics
