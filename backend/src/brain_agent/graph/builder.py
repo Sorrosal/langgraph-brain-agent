@@ -133,7 +133,6 @@ def build_graph(
         bound_model,
         system_prompt=prompt,
         turn_context=_turn_context,
-        tools=tools,
         max_steps=max_steps,
     )
 

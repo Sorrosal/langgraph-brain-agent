@@ -53,6 +53,10 @@ class ThreadRepository(Protocol):
 
     async def owner_of(self, thread_id: str) -> str | None: ...
 
+    async def rename(self, thread_id: str, user_id: str, title: str) -> Thread | None: ...
+
+    async def delete(self, thread_id: str, user_id: str) -> bool: ...
+
 
 class InMemoryThreadRepository:
     def __init__(self) -> None:
@@ -80,6 +84,19 @@ class InMemoryThreadRepository:
     async def owner_of(self, thread_id: str) -> str | None:
         thread = self._threads.get(thread_id)
         return thread.user_id if thread else None
+
+    async def rename(self, thread_id: str, user_id: str, title: str) -> Thread | None:
+        thread = await self.get(thread_id, user_id)
+        if thread is None:
+            return None
+        self._threads[thread_id] = replace(thread, title=title)
+        return self._threads[thread_id]
+
+    async def delete(self, thread_id: str, user_id: str) -> bool:
+        if await self.get(thread_id, user_id) is None:
+            return False
+        del self._threads[thread_id]
+        return True
 
 
 class PostgresThreadRepository:
@@ -133,3 +150,18 @@ class PostgresThreadRepository:
     async def owner_of(self, thread_id: str) -> str | None:
         rows = await self._rows("SELECT user_id FROM threads WHERE id = %s", thread_id)
         return str(rows[0]["user_id"]) if rows else None
+
+    async def rename(self, thread_id: str, user_id: str, title: str) -> Thread | None:
+        rows = await self._rows(
+            f"UPDATE threads SET title = %s WHERE id = %s AND user_id = %s RETURNING {_COLUMNS}",
+            title,
+            thread_id,
+            user_id,
+        )
+        return Thread(**rows[0]) if rows else None
+
+    async def delete(self, thread_id: str, user_id: str) -> bool:
+        rows = await self._rows(
+            "DELETE FROM threads WHERE id = %s AND user_id = %s RETURNING id", thread_id, user_id
+        )
+        return bool(rows)

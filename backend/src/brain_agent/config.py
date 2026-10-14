@@ -48,6 +48,9 @@ class Settings(BaseSettings):
     context_keep_last_messages: int = 12
     """Most recent messages that are never summarised away."""
     memory_recall_limit: int = 5
+    approval_ttl_hours: float = Field(default=72, gt=0)
+    """Pending approvals older than this are dismissed automatically."""
+    approval_sweep_seconds: float = Field(default=600, gt=0)
     memory_extraction_enabled: bool = True
     """Extract durable memories from each finished turn (one extra model call per turn)."""
     email_provider: Literal["outbox", "smtp"] = "outbox"

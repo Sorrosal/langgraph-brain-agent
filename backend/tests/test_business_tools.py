@@ -34,7 +34,6 @@ EXPECTED = {
     "crm_update_deal": ("medium", True),
     "create_task": ("medium", True),
     "complete_task": ("medium", True),
-    "crm_delete_record": ("high", True),
     "delete_task": ("high", True),
 }
 
@@ -101,7 +100,6 @@ def test_args_schemas_are_precise() -> None:
         "amount",
     ]
     assert by_name["create_task"].args["priority"]["enum"] == ["low", "normal", "high"]
-    assert by_name["crm_delete_record"].args["kind"]["enum"] == ["contact", "deal"]
 
 
 async def test_crm_tools_return_compact_json_and_recoverable_errors() -> None:
@@ -121,8 +119,6 @@ async def test_crm_tools_return_compact_json_and_recoverable_errors() -> None:
     updated = await _call(tools, "crm_update_deal", deal_id=deal["id"], amount="20000")
     assert updated["amount"] == "20000.00"
     assert await _call(tools, "crm_list_deals", stage="lead") == [updated]
-    assert await _call(tools, "crm_delete_record", kind="deal", id=deal["id"]) == {"deleted": True}
-    assert await _call(tools, "crm_delete_record", kind="deal", id=deal["id"]) == {"deleted": False}
 
     message = await tools["crm_get_contact"].ainvoke(
         {"type": "tool_call", "name": "x", "id": "1", "args": {"contact_id": "nope"}}
@@ -202,7 +198,12 @@ async def test_create_task_runs_automatically_with_the_ledger_key() -> None:
     assert [t.title for t in await tasks.list_tasks(None, None, 10)] == ["Call Ada"]
 
 
-async def test_crm_delete_record_is_blocked_by_the_rules() -> None:
+async def test_crm_deletion_is_not_a_tool_and_still_blocked_by_the_rules() -> None:
+    # Deletion is not offered to the model (the rules would always block it); a hallucinated
+    # call is still refused by the hard rule before anything runs.
+    assert "crm_delete_record" not in {
+        t.name for t in build_business_tools(InMemoryCrmRepository(), InMemoryTaskRepository())
+    }
     crm = InMemoryCrmRepository()
     deal_id = await _deal(crm)
     call = tool_call("crm_delete_record", {"kind": "deal", "id": deal_id}, "c1")

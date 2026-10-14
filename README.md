@@ -25,8 +25,8 @@ Landing page: <https://sorrosal.github.io/langgraph-brain-agent/>
   runs. The service refuses to start without valid rules that define at least one hard rule.
 - **Context engineering.** A stable, cacheable system prompt; a per-turn context block (local
   date, user, summary, memories); email content spotlighted as untrusted and any write after
-  it held for approval; old tool results cleared from the prompt; behaviour evals in
-  `backend/evals/`. See [docs/architecture.md](docs/architecture.md#context-engineering).
+  it held for approval; old tool results cleared from the prompt; context and behaviour evals
+  in `backend/evals/` (`uv run python -m evals.run`). See [docs/architecture.md](docs/architecture.md#context-engineering).
 - **Long-term memory.** Per-user and organisation memories live in a pgvector-backed store and
   are recalled into each turn.
 
@@ -129,6 +129,8 @@ Names are case-insensitive. They are defined in `backend/src/brain_agent/config.
 | `CONTEXT_KEEP_LAST_MESSAGES` | `12` | Recent messages that are never summarised away. |
 | `MEMORY_RECALL_LIMIT` | `5` | Memories recalled at the start of each turn. |
 | `MEMORY_EXTRACTION_ENABLED` | `true` | Extract durable memories after each turn (one extra model call). |
+| `APPROVAL_TTL_HOURS` | `72` | Pending approvals undecided for this long are dismissed automatically. |
+| `APPROVAL_SWEEP_SECONDS` | `600` | How often the expiry sweep runs. |
 | `RULES_DIR` | `<repo>/rules` | Directory of `*.yaml` rule files. |
 | `EMAIL_PROVIDER` | `outbox` | `outbox` stores mail in PostgreSQL only; `smtp` really sends. |
 | `EMAIL_FROM` | `agent@acme.com` | Sender address. |

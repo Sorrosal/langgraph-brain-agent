@@ -33,6 +33,8 @@ def create_chat_model(settings: Settings, *, max_retries: int = DEFAULT_MAX_RETR
         model=settings.openai_model,
         api_key=_api_key(settings),
         temperature=0,
+        # Token usage also when streaming: the inspector shows how much the prompt cache served.
+        stream_usage=True,
         max_retries=max_retries,
         timeout=settings.openai_timeout_seconds,
     )

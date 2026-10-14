@@ -168,12 +168,12 @@ async def test_failed_run_never_exposes_exception_text_and_clears_on_next_run() 
         tid = await new_thread(h, headers)
         await h.client.post(f"/threads/{tid}/messages", json={"content": "go"}, headers=headers)
         failed = await settled(h.client, headers, tid)
-        assert failed["run"] == {"status": "failed", "error": "run_failed"}
+        assert failed["run"] == {"status": "failed", "error": "run_failed", "code": None}
         assert h.container.supervisor.last_failure(tid) == "run_failed"
 
         await h.client.post(f"/threads/{tid}/messages", json={"content": "again"}, headers=headers)
         recovered = await settled(h.client, headers, tid)
-        assert recovered["run"] == {"status": "idle", "error": None}
+        assert recovered["run"] == {"status": "idle", "error": None, "code": None}
         assert h.container.supervisor.last_failure(tid) is None
 
 

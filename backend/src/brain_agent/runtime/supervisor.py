@@ -88,6 +88,14 @@ class RunSupervisor:
         if self._tasks.get(thread_id) is task:
             del self._tasks[thread_id]
 
+    def cancel(self, thread_id: str) -> bool:
+        """Cancel the thread's running task; ``False`` when nothing runs for it."""
+        task = self._tasks.get(thread_id)
+        if task is None:
+            return False
+        task.cancel()
+        return True
+
     async def shutdown(self) -> None:
         """Cancel every active task and wait for them to unwind."""
         tasks = list(self._tasks.values())

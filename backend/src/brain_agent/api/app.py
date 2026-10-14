@@ -6,6 +6,8 @@ import signal
 import threading
 from collections.abc import AsyncIterator, Callable, Iterator
 from contextlib import asynccontextmanager
+from datetime import timedelta
+from functools import partial
 from types import FrameType
 from typing import Any
 
@@ -23,6 +25,7 @@ from brain_agent.api.security_headers import SecurityHeadersMiddleware
 from brain_agent.config import Settings, get_settings
 from brain_agent.observability.logging import configure_logging
 from brain_agent.observability.tracing import configure_tracing, instrument_app, shutdown_tracing
+from brain_agent.runtime.expiry import expire_stale_approvals, expiry_loop
 from brain_agent.runtime.recovery import SupervisedLoop
 
 
@@ -102,6 +105,18 @@ def create_app(
             loop = SupervisedLoop(container.recovery.run_forever) if container.recovery else None
             app.state.recovery_loop = loop
             worker = asyncio.create_task(loop.run_forever(stop)) if loop else None
+            sweep = partial(
+                expire_stale_approvals,
+                runs=container.runs,
+                threads=container.threads,
+                runner=container.runner,
+                supervisor=container.supervisor,
+                ttl=timedelta(hours=settings.approval_ttl_hours),
+            )
+            expiry = SupervisedLoop(
+                expiry_loop(sweep, settings.approval_sweep_seconds), name="approval-expiry"
+            )
+            expiry_worker = asyncio.create_task(expiry.run_forever(stop))
             try:
                 yield
             finally:
@@ -109,10 +124,11 @@ def create_app(
                 stop.set()
                 container.events.close()  # ends the open event streams
                 await container.supervisor.shutdown()
-                if worker:
-                    worker.cancel()
-                    with contextlib.suppress(asyncio.CancelledError):
-                        await worker
+                for task in (worker, expiry_worker):
+                    if task:
+                        task.cancel()
+                        with contextlib.suppress(asyncio.CancelledError):
+                            await task
 
     app = FastAPI(title="Brain Agent", version=__version__, lifespan=lifespan)
     app.state.limiter = RateLimiter(max_buckets=settings.rate_limit_max_buckets)

@@ -6,7 +6,7 @@ from typing import Annotated, Self
 from langchain_core.tools import BaseTool
 from pydantic import BaseModel, Field, model_validator
 
-from brain_agent.integrations.crm import CrmRepository, DealStage, RecordKind
+from brain_agent.integrations.crm import CrmRepository, DealStage
 from brain_agent.tools.support import idempotency_key_or_new, make_tool, to_json
 
 SEARCH_LIMIT_MAX = 50
@@ -55,11 +55,6 @@ class UpdateDealArgs(BaseModel):
         if self.amount is None and self.stage is None and self.title is None:
             raise ValueError("give at least one of amount, stage or title to update")
         return self
-
-
-class DeleteRecordArgs(BaseModel):
-    kind: RecordKind = Field(description="Whether to delete a contact (and its deals) or a deal.")
-    id: str = Field(description="Id of the record to delete.")
 
 
 def build_crm_tools(repo: CrmRepository) -> list[BaseTool]:
@@ -116,9 +111,6 @@ def build_crm_tools(repo: CrmRepository) -> list[BaseTool]:
     ) -> str:
         return to_json(await repo.update_deal(deal_id, amount=amount, stage=stage, title=title))
 
-    async def delete_record(kind: RecordKind, id: str) -> str:
-        return to_json({"deleted": await repo.delete_record(kind, id)})
-
     return [
         make_tool(
             "crm_search_contacts",
@@ -168,14 +160,5 @@ def build_crm_tools(repo: CrmRepository) -> list[BaseTool]:
             UpdateDealArgs,
             update_deal,
             "medium",
-        ),
-        make_tool(
-            "crm_delete_record",
-            "Delete a CRM contact (with its deals) or a deal. Irreversible; usually not "
-            'permitted for the agent. Returns {"deleted": true|false}.',
-            DeleteRecordArgs,
-            delete_record,
-            "high",
-            approval_reason="Deleting CRM records cannot be undone.",
         ),
     ]

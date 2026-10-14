@@ -1,7 +1,7 @@
 """Read-only business data for the dashboard, and the approval queue."""
 
 import asyncio
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Annotated
 
 from fastapi import APIRouter, Query
@@ -57,6 +57,8 @@ class PendingApproval(BaseModel):
     thread_id: str
     title: str
     updated_at: datetime
+    expires_at: datetime
+    """When the server dismisses it automatically if nobody decides."""
     interrupt: PendingInterrupt
 
 
@@ -75,8 +77,15 @@ async def pending_approvals(container: Container, user: CurrentUser) -> list[Pen
             return await container.runner.get_pending_interrupt(thread_id)
 
     found = await asyncio.gather(*(pending(t.id) for t in threads))
+    ttl = timedelta(hours=container.settings.approval_ttl_hours)
     return [
-        PendingApproval(thread_id=t.id, title=t.title, updated_at=t.updated_at, interrupt=p)
+        PendingApproval(
+            thread_id=t.id,
+            title=t.title,
+            updated_at=t.updated_at,
+            expires_at=t.updated_at + ttl,
+            interrupt=p,
+        )
         for t, p in zip(threads, found, strict=True)
         if p is not None
     ]

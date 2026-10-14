@@ -134,23 +134,56 @@ What the model sees on every call, and why:
 - **Who is talking.** `POST /threads/{id}/messages` accepts the device `timezone` and UI
   `language`; the server adds the user's name and role. They are stored in the state
   (`session`), so approvals and crash recovery keep them.
-- **Untrusted content.** `read_email` and `search_inbox` are flagged `untrusted_output` and wrap
-  their result in `<untrusted_content>` (spotlighting; a body cannot close the tag). If such a
-  tool returned content in the current turn, the approval gate requires a human decision for
-  every tool that is not `read_only`, whatever the rules say: a deterministic fence in the
-  spirit of Microsoft's FIDES, not a prompt heuristic. Tool output never reaches memory
-  extraction.
+- **Untrusted content.** `read_email` and `search_inbox` wrap their result in
+  `<untrusted_content>` (spotlighting; every `<` inside is escaped, so no spelling of a closing
+  tag ends the block). Once such content is in a thread's context (the result itself, or a
+  summary that folded it in, `summary_tainted`), the approval gate requires a human decision for
+  every tool that is not `read_only`, whatever the rules say, for the rest of that thread: the
+  model's own paraphrase of an email would otherwise let it act turns later. A deterministic,
+  deliberately conservative fence in the spirit of Microsoft's FIDES, not a prompt heuristic.
+  Such threads learn no memories, and the summary never quotes outside content verbatim.
 - **Tool-result clearing.** Tool results longer than 1500 characters from earlier turns are
   replaced by a stub in the prompt view only; the checkpointed state keeps them.
 - **Memory upkeep.** Extraction sees the user's related memories with their ids and returns
-  `add`, `update` or `delete` operations (only on memories it was shown), so corrections
-  replace stale facts instead of piling up duplicates. It never stores the assistant's own
-  rules or capabilities.
+  `add`, `update` or `delete` operations, so corrections replace stale facts instead of piling
+  up duplicates. Only memories it was shown and that were learnt from chats can change; the ones
+  the user wrote by hand stay untouched. It never stores the assistant's own rules or
+  capabilities.
+- **Rules from the chat.** `update_rules_file` (admins, always approved) may only add hard rules
+  or tighten `require_approval` to `block`; removing or relaxing one is refused and left to the
+  Brain page. Every change is logged as `rules_updated`.
 - **Observability.** Each model call records `context_report` (approximate tokens per section,
   cleared results, untrusted content in scope, the turn-context text); the inspector shows it.
-- **Behaviour evals.** `backend/evals/` runs the real model against in-memory CRM, tasks and
-  email with the repo's rules (`uv run python evals/run.py`). It writes nothing to PostgreSQL
-  and creates no cloud resources; the only cost is the model calls. Not part of CI.
+- **Evals.** `backend/evals/` has three suites with one scorecard (`uv run python -m evals.run
+  --suite context-static|context-model|behaviour|all`); each run also writes a JSON report to
+  `evals/reports/` (git-ignored) to compare runs. Nothing is written to PostgreSQL and no cloud
+  resource is created.
+  - `context-static` (free, deterministic, a CI gate via `tests/test_context_evals.py`): the real
+    graph with a scripted model, measuring what reaches the model: system-prompt stability and
+    cacheable prefix share, turn-context placement, history budget at turn start, compactions,
+    stale tool results, untrusted-content spotlighting and containment (never in a system
+    message or the summariser input), the write-after-email gate, and memory recall@3 / MRR /
+    precision@3 on a labelled set.
+  - `context-model` (real model and embeddings, a few cents): memory extraction accuracy (store,
+    update, ignore small talk and the assistant's own limits), summary fact retention and leak
+    check, grounding in recalled memory and organisation knowledge, recall with real embeddings.
+  - `behaviour` (real model): approvals, blocks, local dates, prompt injection end to end.
+  Model suites run locally or from the manual "Behaviour evals" workflow (`OPENAI_API_KEY`
+  secret), which uploads the report as an artifact.
+
+## Conversation lifecycle
+
+- `PATCH /threads/{id}` renames, `DELETE /threads/{id}` removes the thread, its checkpoints and
+  its run row (refused while a run is active).
+- `POST /threads/{id}/cancel` stops the running agent: the run is finished as `failed`
+  ("cancelled"), so recovery leaves it alone, and the next message closes any dangling tool call.
+  A tool already executing when the stop arrives may have had its effect.
+- `POST /threads/{id}/dismiss` rejects every pending approval (or skips every uncertain action)
+  and lets the agent continue. Approvals left undecided for `APPROVAL_TTL_HOURS` (72) are
+  dismissed the same way by a background sweep (`runtime/expiry.py`, every
+  `APPROVAL_SWEEP_SECONDS`); `GET /approvals/pending` reports each one's `expires_at`.
+- Organisation knowledge (facts every user's agent recalls): `GET /org-knowledge` for everyone,
+  `POST` and `DELETE /org-knowledge/{id}` for admins.
 
 ## Rules evaluation order
 

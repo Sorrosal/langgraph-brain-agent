@@ -122,6 +122,17 @@ class MemoryService:
         """Add a shared fact visible to every user (no agent tool does this)."""
         return await self._put(_ORG_NAMESPACE, "fact", text, source)
 
+    async def list_org_knowledge(self) -> builtins.list[MemoryRecord]:
+        """Organisation knowledge, newest first."""
+        return _rank(await self._search(_ORG_NAMESPACE, None, _LIST_LIMIT), _LIST_LIMIT)
+
+    async def forget_org_knowledge(self, memory_id: str) -> bool:
+        """Delete one organisation fact; ``False`` if there was none with that id."""
+        if await self._store.aget(_ORG_NAMESPACE, memory_id) is None:
+            return False
+        await self._store.adelete(_ORG_NAMESPACE, memory_id)
+        return True
+
     async def _search(
         self, namespace: tuple[str, ...], query: str | None, limit: int
     ) -> builtins.list[MemoryRecord]:

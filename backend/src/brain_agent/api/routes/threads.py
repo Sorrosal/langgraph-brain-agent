@@ -6,15 +6,17 @@ from datetime import datetime
 from typing import Annotated, Any, Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from fastapi import APIRouter, Query, Request
+from fastapi import APIRouter, Query, Request, Response
 from langchain_core.messages import AIMessage, BaseMessage, ToolMessage
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, StringConstraints, field_validator
 
 from brain_agent.api.auth import Container, CurrentUser
+from brain_agent.api.errors import ApiError
 from brain_agent.api.ratelimit import enforce
-from brain_agent.errors import NotFoundError, ThreadBusyError
+from brain_agent.errors import NoPendingApprovalError, NotFoundError, ThreadBusyError
 from brain_agent.hitl.models import ApprovalResponse, PendingInterrupt, UncertainResponse
 from brain_agent.persistence.threads import Thread
+from brain_agent.runtime.runner import CANCELLED
 from brain_agent.runtime.supervisor import RunSupervisor
 
 router = APIRouter(prefix="/threads", tags=["threads"])
@@ -75,6 +77,8 @@ class MessageOut(BaseModel):
 class RunOut(BaseModel):
     status: RunStatus
     error: str | None = None
+    code: str | None = None
+    """``run_cancelled`` when the user stopped the run."""
 
 
 class ThreadDetail(ThreadOut):
@@ -145,6 +149,8 @@ async def _run_status(container: Container, thread_id: str, interrupted: bool) -
     if container.supervisor.is_running(thread_id) or (record and record.status == "running"):
         return RunOut(status="running")  # a lapsed lease is picked up by the recovery worker
     if record and record.status == "failed":
+        if record.last_error == CANCELLED:
+            return RunOut(status="failed", error=CANCELLED, code="run_cancelled")
         return RunOut(status="failed", error=RUN_FAILED)  # the ledger keeps the raw text
     if interrupted:
         return RunOut(status="interrupted")
@@ -230,6 +236,60 @@ async def post_message(
     return RunAccepted(run=RunOut(status="running"))
 
 
+class RenameThread(BaseModel):
+    title: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=120)]
+
+
+@router.patch("/{thread_id}", response_model=ThreadOut)
+async def rename_thread(
+    thread_id: str, body: RenameThread, container: Container, user: CurrentUser
+) -> ThreadOut:
+    thread = await container.threads.rename(thread_id, user.id, body.title)
+    if thread is None:
+        raise NotFoundError("thread", thread_id)
+    return ThreadOut.of(thread)
+
+
+@router.delete("/{thread_id}", status_code=204)
+async def delete_thread(thread_id: str, container: Container, user: CurrentUser) -> Response:
+    """Delete the conversation and its checkpoints; refused while a run is active."""
+    await owned_thread(container, user, thread_id)
+    supervisor = container.supervisor
+    supervisor.reserve(thread_id)  # raises ThreadBusyError while a run holds the thread
+    try:
+        await container.runner.delete_thread(thread_id)
+        await container.runs.forget(thread_id)
+        await container.threads.delete(thread_id, user.id)
+    finally:
+        supervisor.release(thread_id)
+    return Response(status_code=204)
+
+
+@router.post("/{thread_id}/cancel", status_code=202, response_model=RunAccepted)
+async def cancel_run(thread_id: str, container: Container, user: CurrentUser) -> RunAccepted:
+    """Stop the thread's running agent. The run ends as failed (code ``run_cancelled``)."""
+    await owned_thread(container, user, thread_id)
+    container.runner.request_cancel(thread_id)
+    if not container.supervisor.cancel(thread_id):
+        raise ApiError(409, "not_running", "Nothing is running on this conversation.")
+    return RunAccepted(run=RunOut(status="failed"))
+
+
+@router.post("/{thread_id}/dismiss", status_code=202, response_model=RunAccepted)
+async def dismiss_pending(thread_id: str, container: Container, user: CurrentUser) -> RunAccepted:
+    """Reject every pending approval (or skip every uncertain action) and resume the run."""
+    await owned_thread(container, user, thread_id)
+    runner = container.runner
+    with admission(container.supervisor, thread_id):
+        if await runner.get_pending_interrupt(thread_id) is None:
+            raise NoPendingApprovalError(thread_id)
+        await container.threads.touch(thread_id)
+        container.supervisor.start(
+            thread_id, lambda sink: runner.dismiss(thread_id, user_id=user.id, sink=sink)
+        )
+    return RunAccepted(run=RunOut(status="running"))
+
+
 @router.post("/{thread_id}/approvals", status_code=202, response_model=RunAccepted)
 async def post_approval(
     thread_id: str, body: ApprovalResponse, container: Container, user: CurrentUser
@@ -237,6 +297,7 @@ async def post_approval(
     await owned_thread(container, user, thread_id)
     with admission(container.supervisor, thread_id):
         await container.runner.validate_approval(thread_id, body)
+        await container.threads.touch(thread_id)
         container.supervisor.start(
             thread_id,
             lambda sink: container.runner.approve(thread_id, body, user_id=user.id, sink=sink),

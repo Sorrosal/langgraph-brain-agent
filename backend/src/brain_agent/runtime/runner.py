@@ -31,6 +31,7 @@ from brain_agent.hitl.models import (
     ApprovalResponse,
     ConfirmDone,
     PendingInterrupt,
+    Reject,
     Retry,
     Skip,
     UncertainExecutionInterrupt,
@@ -47,6 +48,9 @@ RunStatus = Literal["completed", "interrupted"]
 Pending = TypeVar("Pending", ApprovalInterrupt, UncertainExecutionInterrupt)
 
 DEFAULT_LEASE_SECONDS = 60.0
+
+CANCELLED = "The run was cancelled."
+DISMISSED = "Dismissed by the user without a decision; do not run this action."
 
 
 @dataclass(frozen=True, slots=True)
@@ -113,6 +117,7 @@ class AgentRunner:
     ) -> None:
         if not isinstance(graph.checkpointer, BaseCheckpointSaver):
             raise ConfigurationError("AgentRunner requires a graph compiled with a checkpointer")
+        self._cancel_requested: set[str] = set()
         if lease_seconds <= 0:
             raise ValueError(f"lease_seconds must be positive, got {lease_seconds}")
         resolved_interval = lease_seconds / 3 if heartbeat_interval is None else heartbeat_interval
@@ -272,6 +277,41 @@ class AgentRunner:
             "resolve_uncertain",
         )
 
+    def request_cancel(self, thread_id: str) -> None:
+        """Mark the thread's coming task cancellation as a user stop (see the supervisor)."""
+        self._cancel_requested.add(thread_id)
+
+    async def dismiss(
+        self,
+        thread_id: str,
+        *,
+        reason: str = DISMISSED,
+        user_id: str = DEFAULT_USER_ID,
+        sink: EventSink | None = None,
+    ) -> RunResult:
+        """Answer whatever the thread is paused on without acting: reject every pending
+        approval (or skip every uncertain execution) and let the run continue.
+
+        Raises:
+            NoPendingApprovalError: the thread is not paused on a decision.
+        """
+        pending = await self.get_pending_interrupt(thread_id)
+        if isinstance(pending, ApprovalInterrupt):
+            response = ApprovalResponse(
+                decisions={a.action_id: Reject(reason=reason) for a in pending.actions}
+            )
+            return await self.approve(thread_id, response, user_id=user_id, sink=sink)
+        if isinstance(pending, UncertainExecutionInterrupt):
+            skips = {a.action_id: Skip() for a in pending.actions}
+            return await self.resolve_uncertain(thread_id, skips, user_id=user_id, sink=sink)
+        raise NoPendingApprovalError(thread_id)
+
+    async def delete_thread(self, thread_id: str) -> None:
+        """Drop every checkpoint of the thread."""
+        checkpointer = self._graph.checkpointer
+        assert isinstance(checkpointer, BaseCheckpointSaver)
+        await checkpointer.adelete_thread(thread_id)
+
     async def validate_approval(self, thread_id: str, response: ApprovalResponse) -> None:
         """Check ``response`` against the pending approval without resuming anything.
 
@@ -387,6 +427,12 @@ class AgentRunner:
                 return await self._claim_and_drive(
                     thread_id, graph_input, user_id, reset_attempts, sink
                 )
+            except asyncio.CancelledError:
+                if thread_id in self._cancel_requested:
+                    self._cancel_requested.discard(thread_id)
+                    observation.outcome = "cancelled"
+                    _emit(sink, "run_failed", {"code": "run_cancelled", "message": CANCELLED})
+                raise
             except Exception as exc:
                 if isinstance(exc, LeaseLostError):
                     observation.outcome = "lease_lost"
@@ -456,6 +502,10 @@ class AgentRunner:
         except asyncio.CancelledError:
             if lost.is_set():
                 raise LeaseLostError(thread_id) from None
+            if thread_id in self._cancel_requested:
+                # A user stop, not a shutdown: finish the run as failed so recovery leaves it
+                # alone; the next message closes any dangling tool call (fix forward).
+                await runs.mark_finished(thread_id, self._owner_id, token, "failed", CANCELLED)
             raise
         except Exception as exc:
             await self._record_failure(runs, thread_id, token, exc)

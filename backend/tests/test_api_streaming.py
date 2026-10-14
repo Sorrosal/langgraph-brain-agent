@@ -156,7 +156,7 @@ async def test_failed_run_streams_a_safe_error() -> None:
             events = await stream.until("run_failed")
         assert events[-1].data == {"code": "run_failed", "message": "The run failed."}
         state = await settled(h.client, headers, tid)
-        assert state["run"] == {"status": "failed", "error": "run_failed"}
+        assert state["run"] == {"status": "failed", "error": "run_failed", "code": None}
         assert "secret" not in str(state)
 
 

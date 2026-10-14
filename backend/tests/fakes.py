@@ -5,6 +5,7 @@ import math
 import re
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
+from datetime import datetime
 from typing import Any
 
 from langchain_core.callbacks import AsyncCallbackManagerForLLMRun, CallbackManagerForLLMRun
@@ -197,6 +198,13 @@ class FakeRunLedger:
 
     async def get(self, thread_id: str) -> FakeRunRecord | None:
         return self.records.get(thread_id)
+
+    async def forget(self, thread_id: str) -> None:
+        self.records.pop(thread_id, None)
+
+    async def paused_before(self, cutoff: datetime, limit: int) -> list[str]:
+        # Untimed ledger: every paused run counts as stale.
+        return [r.thread_id for r in self.records.values() if r.status == "interrupted"][:limit]
 
 
 class InMemoryToolLedger:

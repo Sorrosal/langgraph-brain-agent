@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field, StringConstraints
 from brain_agent.api.auth import AdminUser, Container, CurrentUser
 from brain_agent.api.errors import ApiError
 from brain_agent.api.ratelimit import enforce
+from brain_agent.brain.knowledge_graph import build_knowledge_graph
 from brain_agent.brain.memory import MemoryKind, MemoryRecord
 from brain_agent.brain.rules import (
     MAX_RULES_BYTES,
@@ -79,6 +80,66 @@ async def delete_memory(memory_id: str, container: Container, user: CurrentUser)
     if not await container.memory.forget(user.id, memory_id):
         raise NotFoundError("memory", memory_id)
     return Response(status_code=204)
+
+
+class OrgKnowledgeIn(BaseModel):
+    text: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=2000)]
+
+
+@router.get("/org-knowledge", response_model=list[MemoryOut])
+async def list_org_knowledge(container: Container, _: CurrentUser) -> list[MemoryOut]:
+    """Shared facts every user's agent can recall."""
+    return [MemoryOut.of(m) for m in await container.memory.list_org_knowledge()]
+
+
+@router.post("/org-knowledge", status_code=201, response_model=MemoryOut)
+async def add_org_knowledge(
+    body: OrgKnowledgeIn, container: Container, admin: AdminUser
+) -> MemoryOut:
+    record = await container.memory.add_org_knowledge(body.text, source=None)
+    logger.info("org_knowledge_added", user_id=admin.id, memory_id=record.id)
+    return MemoryOut.of(record)
+
+
+@router.delete("/org-knowledge/{memory_id}", status_code=204)
+async def delete_org_knowledge(memory_id: str, container: Container, admin: AdminUser) -> Response:
+    if not await container.memory.forget_org_knowledge(memory_id):
+        raise NotFoundError("org knowledge", memory_id)
+    logger.info("org_knowledge_deleted", user_id=admin.id, memory_id=memory_id)
+    return Response(status_code=204)
+
+
+GRAPH_LIMITS = {"memories": 200, "org": 100, "contacts": 100, "deals": 100, "tasks": 50}
+
+
+@router.get("/brain/graph")
+async def knowledge_graph(container: Container, user: CurrentUser) -> dict[str, Any]:
+    """Everything the agent knows for this user, as nodes and edges (see ``knowledge_graph``)."""
+    memories, org, contacts, deals, tasks = await asyncio.gather(
+        container.memory.list(user.id),
+        container.memory.list_org_knowledge(),
+        container.crm.search_contacts("", GRAPH_LIMITS["contacts"] + 1),
+        container.crm.list_deals(None, None),
+        container.tasks.list_tasks(None, None, GRAPH_LIMITS["tasks"] + 1),
+    )
+    sizes = {
+        "memories": len(memories),
+        "org": len(org),
+        "contacts": len(contacts),
+        "deals": len(deals),
+        "tasks": len(tasks),
+    }
+    truncated = any(sizes[k] > limit for k, limit in GRAPH_LIMITS.items())
+    return build_knowledge_graph(
+        user_name=user.display_name,
+        memories=memories[: GRAPH_LIMITS["memories"]],
+        org_knowledge=org[: GRAPH_LIMITS["org"]],
+        ruleset=container.rules.ruleset,
+        contacts=contacts[: GRAPH_LIMITS["contacts"]],
+        deals=deals[: GRAPH_LIMITS["deals"]],
+        tasks=tasks[: GRAPH_LIMITS["tasks"]],
+        truncated=truncated,
+    )
 
 
 class RuleFileOut(BaseModel):

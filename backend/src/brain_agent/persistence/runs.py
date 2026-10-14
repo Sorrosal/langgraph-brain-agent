@@ -193,6 +193,14 @@ class RunLedger(Protocol):
 
     async def get(self, thread_id: str) -> RunView | None: ...
 
+    async def paused_before(self, cutoff: datetime, limit: int) -> list[str]:
+        """Threads paused on a human decision since before ``cutoff``, oldest first."""
+        ...
+
+    async def forget(self, thread_id: str) -> None:
+        """Drop the run row of a deleted thread."""
+        ...
+
 
 class RunRegistry:
     """:class:`RunLedger` backed by the ``agent_runs`` table.
@@ -305,6 +313,22 @@ class RunRegistry:
                 max_attempts=max_attempts,
             )
         return [row["thread_id"] for row in claimed_rows]
+
+    async def paused_before(self, cutoff: datetime, limit: int) -> list[str]:
+        async with self._pool.connection() as conn:
+            cursor = await conn.execute(
+                b"SELECT thread_id FROM agent_runs WHERE status = 'interrupted' "
+                b"AND updated_at < %(cutoff)s ORDER BY updated_at LIMIT %(limit)s",
+                {"cutoff": cutoff, "limit": limit},
+            )
+            rows = await cursor.fetchall()
+        return [row["thread_id"] for row in rows]
+
+    async def forget(self, thread_id: str) -> None:
+        async with self._pool.connection() as conn:
+            await conn.execute(
+                b"DELETE FROM agent_runs WHERE thread_id = %(thread_id)s", {"thread_id": thread_id}
+            )
 
     async def get(self, thread_id: str) -> RunRecord | None:
         """Return the run row for ``thread_id`` or ``None``."""
