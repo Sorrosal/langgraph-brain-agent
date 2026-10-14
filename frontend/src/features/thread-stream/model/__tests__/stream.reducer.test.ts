@@ -141,6 +141,18 @@ describe('streamReducer', () => {
     });
   });
 
+  it('keeps the code of a cancelled run so the UI can tell it from a failure', () => {
+    const state = run([
+      ev(1, 'token', { text: 'x' }),
+      ev(2, 'run_failed', { code: 'run_cancelled', message: 'The run was cancelled.' }),
+    ]);
+    expect(state).toMatchObject({
+      runStatus: 'failed',
+      streamingText: '',
+      error: { code: 'run_cancelled', message: 'The run was cancelled.' },
+    });
+  });
+
   it('ignores replayed events (dedupe by id) after a reconnect', () => {
     const first = run([ev(10, 'token', { text: 'a' }), ev(11, 'token', { text: 'b' })]);
     const replayed = run(

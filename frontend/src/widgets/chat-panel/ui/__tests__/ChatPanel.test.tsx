@@ -62,6 +62,38 @@ describe('ChatPanel', () => {
     expect(screen.getByRole('textbox', { name: 'Message' })).toBeDisabled();
   });
 
+  it('offers Stop while a run is active and cancels it', async () => {
+    vi.spyOn(api, 'get').mockResolvedValue({
+      data: { ...detail, pending_interrupt: null, run: { status: 'running' } },
+    });
+    const post = vi.spyOn(api, 'post').mockResolvedValue({ data: { run: { status: 'failed' } } });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <MemoryRouter>
+          <ChatPanel threadId="t1" />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Stop' }));
+    expect(post).toHaveBeenCalledWith('/threads/t1/cancel');
+  });
+
+  it('does not offer Stop while waiting for an approval, but offers Dismiss', async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <MemoryRouter>
+          <ChatPanel threadId="t1" />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+
+    expect(await screen.findByRole('button', { name: 'Dismiss' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Stop' })).not.toBeInTheDocument();
+  });
+
   it.each([
     ['approvals', detail.pending_interrupt, 'Approve'],
     [

@@ -56,6 +56,15 @@
     "sending": "Sending…",
     "sendFailed": "Your decisions could not be sent. Nothing was changed, so you can try again."
   },
+  "dismiss": {
+    "action": "Dismiss",
+    "actionFor": "Dismiss: {{title}}",
+    "title": "Dismiss this request?",
+    "descriptionApproval": "Every pending action will be rejected and nothing will run. The assistant is told and replies in the conversation.",
+    "descriptionUncertain": "Every uncertain action will be skipped without confirming whether it ran. The assistant is told and replies in the conversation.",
+    "confirm": "Dismiss request",
+    "failed": "Could not dismiss the request. Please try again."
+  },
   "errors": {
     "noDecision": "Choose a decision.",
     "invalidJson": "Arguments must be valid JSON.",
@@ -66,6 +75,8 @@
     "untitled": "New conversation",
     "actions_one": "{{count}} action",
     "actions_other": "{{count}} actions",
+    "expiresIn": "Expires {{when}}",
+    "expired": "Expired",
     "groupApproval": "Waiting for approval",
     "groupUncertain": "Outcome unknown",
     "loadFailed": "Could not load pending approvals.",

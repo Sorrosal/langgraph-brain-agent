@@ -5,7 +5,9 @@
   },
   "tabs": {
     "memories": "Memories",
-    "rules": "Rules"
+    "org": "Organisation",
+    "rules": "Rules",
+    "graph": "Graph"
   },
   "kinds": {
     "fact": "Fact",
@@ -59,6 +61,37 @@
       "label": "Delete memory",
       "title": "Delete this memory?",
       "description": "The agent will no longer recall it."
+    }
+  },
+  "org": {
+    "description": "Shared facts that every user's agent can recall, such as \"Invoices are paid on the 5th\". They apply to the whole organisation, not to one person.",
+    "readOnlyNote": "Only administrators can add or remove organisation knowledge. You can read it here, and your agent recalls it in your conversations.",
+    "add": {
+      "title": "Add organisation knowledge",
+      "description": "Write one fact for the whole organisation. Every user's agent will be able to recall it.",
+      "textLabel": "Organisation knowledge text",
+      "placeholder": "For example: Invoices are paid on the 5th of each month…",
+      "submit": "Add knowledge",
+      "errors": {
+        "required": "Enter some text",
+        "tooLong": "At most 2000 characters"
+      }
+    },
+    "count_one": "{{count}} shared fact",
+    "count_other": "{{count}} shared facts",
+    "card": {
+      "createdAt": "Added {{date}}"
+    },
+    "empty": {
+      "title": "No organisation knowledge yet.",
+      "description": "When an administrator adds shared facts, they will show up here.",
+      "descriptionAdmin": "Add the first shared fact above and every user's agent will be able to recall it."
+    },
+    "loadError": "Could not load organisation knowledge.",
+    "delete": {
+      "label": "Delete organisation knowledge",
+      "title": "Delete this shared fact?",
+      "description": "No user's agent will recall it any more."
     }
   },
   "rules": {

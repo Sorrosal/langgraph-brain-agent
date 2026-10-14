@@ -30,7 +30,10 @@
     "markRead": "Mark as read",
     "remove": "Remove notification",
     "empty": "No notifications",
-    "emptyHint": "You're all caught up."
+    "emptyHint": "You're all caught up.",
+    "approvalNeeded": "Approval needed",
+    "outcomeUnknown": "Check an action's outcome",
+    "runFailed": "A run failed"
   },
   "toasts": {
     "region": "Notifications"

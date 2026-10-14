@@ -5,7 +5,9 @@
   },
   "tabs": {
     "memories": "Recuerdos",
-    "rules": "Reglas"
+    "org": "Organización",
+    "rules": "Reglas",
+    "graph": "Grafo"
   },
   "kinds": {
     "fact": "Hecho",
@@ -59,6 +61,37 @@
       "label": "Eliminar recuerdo",
       "title": "¿Eliminar este recuerdo?",
       "description": "El agente dejará de recordarlo."
+    }
+  },
+  "org": {
+    "description": "Hechos compartidos que el agente de cualquier usuario puede recordar, como «Las facturas se pagan el día 5». Valen para toda la organización, no para una sola persona.",
+    "readOnlyNote": "Solo los administradores pueden añadir o eliminar el conocimiento de la organización. Puedes leerlo aquí, y tu agente lo recuerda en tus conversaciones.",
+    "add": {
+      "title": "Añadir conocimiento de la organización",
+      "description": "Escribe un hecho para toda la organización. El agente de cualquier usuario podrá recordarlo.",
+      "textLabel": "Texto del conocimiento de la organización",
+      "placeholder": "Por ejemplo: Las facturas se pagan el día 5 de cada mes…",
+      "submit": "Añadir conocimiento",
+      "errors": {
+        "required": "Escribe algún texto",
+        "tooLong": "Máximo 2000 caracteres"
+      }
+    },
+    "count_one": "{{count}} hecho compartido",
+    "count_other": "{{count}} hechos compartidos",
+    "card": {
+      "createdAt": "Añadido {{date}}"
+    },
+    "empty": {
+      "title": "Aún no hay conocimiento de la organización.",
+      "description": "Cuando un administrador añada hechos compartidos, aparecerán aquí.",
+      "descriptionAdmin": "Añade arriba el primer hecho compartido y el agente de cualquier usuario podrá recordarlo."
+    },
+    "loadError": "No se pudo cargar el conocimiento de la organización.",
+    "delete": {
+      "label": "Eliminar conocimiento de la organización",
+      "title": "¿Eliminar este hecho compartido?",
+      "description": "El agente de ningún usuario volverá a recordarlo."
     }
   },
   "rules": {

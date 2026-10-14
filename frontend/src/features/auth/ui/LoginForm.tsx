@@ -2,7 +2,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { LoaderCircle } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { Button } from '@/shared/ui/button';
 import { cn } from '@/shared/lib/cn';
@@ -10,6 +10,7 @@ import { useLogin } from '../api/auth.api';
 import { authErrorMessage } from '../model/auth-error';
 import { loginSchema } from '../model/auth.schemas';
 import type { LoginFormValues } from '../model/auth.schemas';
+import { redirectTarget } from '../model/redirect';
 import { FormError } from './FormError';
 import { FormField } from './FormField';
 
@@ -20,6 +21,7 @@ interface LoginFormProps {
 export function LoginForm({ className }: LoginFormProps) {
   const { t } = useTranslation('auth');
   const navigate = useNavigate();
+  const location = useLocation();
   const { mutate: login, isPending, error } = useLogin();
 
   const {
@@ -34,7 +36,7 @@ export function LoginForm({ className }: LoginFormProps) {
     login(data, {
       onSuccess: () => {
         toast.success(t('login.success'));
-        void navigate('/app/chat');
+        void navigate(redirectTarget(location.state), { replace: true });
       },
     });
   }

@@ -1,7 +1,8 @@
 import { Brain, DatabaseZap, UserCheck } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { Link, Outlet } from 'react-router-dom';
+import { Link, Navigate, Outlet, useLocation } from 'react-router-dom';
 import { useTheme } from '@/app/providers/ThemeProvider';
+import { redirectTarget, selectIsAuthenticated, useAuthStore } from '@/features/auth';
 import { LanguageSwitcher } from '@/features/switch-language';
 import { env } from '@/shared/config/env';
 import { ThemeToggle } from '@/widgets/theme-toggle';
@@ -16,6 +17,11 @@ const POINTS = [
 export function AuthLayout() {
   const { t } = useTranslation('auth');
   const { theme, toggleTheme } = useTheme();
+  const isAuthenticated = useAuthStore(selectIsAuthenticated);
+  const location = useLocation();
+
+  // Already signed in (or just signed in): go back where the guard sent us from, else the chat.
+  if (isAuthenticated) return <Navigate to={redirectTarget(location.state)} replace />;
 
   return (
     <div className="min-h-dvh">

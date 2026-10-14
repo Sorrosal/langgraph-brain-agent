@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Outlet } from 'react-router-dom';
 import { useTheme } from '@/app/providers/ThemeProvider';
+import { useApprovalNotifications } from '@/features/notifications';
 import { useMediaQuery } from '@/shared/hooks/use-media-query';
 import { Header } from '@/widgets/header';
 import { MobileSidebar, Sidebar } from '@/widgets/sidebar';
@@ -12,6 +13,7 @@ export function AppLayout() {
   const { theme, toggleTheme } = useTheme();
   const [navOpen, setNavOpen] = useState(false);
   const isDesktop = useMediaQuery('(min-width: 768px)');
+  useApprovalNotifications();
 
   return (
     <div className="flex h-dvh overflow-hidden md:gap-3 md:p-3">

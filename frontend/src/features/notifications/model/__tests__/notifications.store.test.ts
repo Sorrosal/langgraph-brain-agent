@@ -21,6 +21,13 @@ describe('notifications store', () => {
     expect(selectUnreadCount(useNotificationsStore.getState())).toBe(0);
   });
 
+  it('keeps the link a notification opens', () => {
+    useNotificationsStore
+      .getState()
+      .addNotification({ type: 'warning', title: 'A', message: 'a', href: '/app/chat/t1' });
+    expect(useNotificationsStore.getState().notifications[0]?.href).toBe('/app/chat/t1');
+  });
+
   it('does not keep the count in state', () => {
     expect('unreadCount' in useNotificationsStore.getState()).toBe(false);
   });

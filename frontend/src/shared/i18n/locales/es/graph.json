@@ -1,0 +1,107 @@
+{
+  "description": "Todo lo que sabe el agente, conectado: tus recuerdos, los datos compartidos por tu organización, las reglas que sigue y tus datos de negocio. Arrastra los nodos, usa la rueda para acercar y selecciona uno para ver su detalle.",
+  "canvas": {
+    "title": "Grafo de conocimiento",
+    "description": "Grafo interactivo con {{nodes}} elementos y {{edges}} conexiones. Se puede enfocar cada elemento; pulsa Intro para seleccionarlo. Después del grafo hay una lista de texto con todos los elementos."
+  },
+  "search": {
+    "label": "Buscar en el grafo",
+    "placeholder": "Busca recuerdos, contactos, reglas…",
+    "results_one": "{{count}} coincidencia",
+    "results_other": "{{count}} coincidencias",
+    "none": "Sin coincidencias"
+  },
+  "filters": {
+    "label": "Mostrar u ocultar tipos de elemento"
+  },
+  "stats": {
+    "memory_one": "{{count}} recuerdo",
+    "memory_other": "{{count}} recuerdos",
+    "org_one": "{{count}} dato de la organización",
+    "org_other": "{{count}} datos de la organización",
+    "rule_one": "{{count}} regla",
+    "rule_other": "{{count}} reglas",
+    "guideline_one": "{{count}} pauta",
+    "guideline_other": "{{count}} pautas",
+    "tool_one": "{{count}} herramienta",
+    "tool_other": "{{count}} herramientas",
+    "contact_one": "{{count}} contacto",
+    "contact_other": "{{count}} contactos",
+    "company_one": "{{count}} empresa",
+    "company_other": "{{count}} empresas",
+    "deal_one": "{{count}} oportunidad",
+    "deal_other": "{{count}} oportunidades",
+    "task_one": "{{count}} tarea",
+    "task_other": "{{count}} tareas"
+  },
+  "types": {
+    "user": "Tú",
+    "hub": "Grupo",
+    "memory_kind": "Tipo de recuerdo",
+    "memory": "Recuerdo",
+    "org": "Dato de la organización",
+    "rule": "Regla",
+    "guideline": "Pauta",
+    "tool": "Herramienta",
+    "company": "Empresa",
+    "contact": "Contacto",
+    "deal": "Oportunidad",
+    "task": "Tarea",
+    "other": "Otro"
+  },
+  "groups": {
+    "fact": "Hecho",
+    "preference": "Preferencia",
+    "episode": "Episodio",
+    "block": "Bloqueada",
+    "require_approval": "Requiere aprobación",
+    "open": "Abierta",
+    "done": "Hecha"
+  },
+  "hubs": {
+    "org": "Organización",
+    "rules": "Reglas",
+    "crm": "CRM",
+    "tasks": "Tareas"
+  },
+  "relations": {
+    "has": "Contiene",
+    "governs": "Regula",
+    "works_at": "Trabaja en",
+    "deal_of": "Oportunidad de",
+    "mentions": "Menciona"
+  },
+  "legend": {
+    "title": "Leyenda",
+    "ruleApproval": "Regla que requiere aprobación",
+    "ruleBlock": "Regla que bloquea una herramienta",
+    "link": "Conexión",
+    "mention": "Un recuerdo menciona a un contacto o una empresa"
+  },
+  "zoom": {
+    "in": "Acercar",
+    "out": "Alejar",
+    "fit": "Ajustar el grafo a la vista"
+  },
+  "panel": {
+    "label": "Elemento seleccionado",
+    "close": "Cerrar detalle",
+    "added": "Añadido {{when}}",
+    "connections_one": "Conexión ({{count}})",
+    "connections_other": "Conexiones ({{count}})",
+    "noConnections": "Este elemento no está conectado con nada.",
+    "empty": "Selecciona un elemento para ver su detalle y con qué se conecta."
+  },
+  "list": {
+    "title": "Todos los elementos por tipo"
+  },
+  "truncated": "El grafo es demasiado grande para mostrarlo entero, así que faltan algunos elementos.",
+  "error": {
+    "title": "No se pudo cargar el grafo de conocimiento."
+  },
+  "empty": {
+    "title": "Todavía no hay nada que mostrar.",
+    "description": "Los recuerdos aparecen aquí a medida que chateas: el agente guarda hechos, preferencias y episodios, y los enlaza con los contactos y las empresas que mencionan.",
+    "openChat": "Abrir el chat"
+  }
+}

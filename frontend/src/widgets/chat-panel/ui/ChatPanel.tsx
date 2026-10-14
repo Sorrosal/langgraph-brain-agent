@@ -1,19 +1,22 @@
-import { ArrowDown, CircleAlert, CircleCheck, LoaderCircle, Wrench } from 'lucide-react';
+import { ArrowDown, CircleAlert, CircleCheck, LoaderCircle, Square, Wrench } from 'lucide-react';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { TFunction } from 'i18next';
 import { useTranslation } from 'react-i18next';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { toast } from 'sonner';
+import { notifyRunFailed } from '@/features/notifications';
 import { ApprovalReview } from '@/features/review-approval';
 import { MessageComposer, useSendMessage } from '@/features/send-message';
 import { useThreadStream } from '@/features/thread-stream';
 import type { ToolActivity } from '@/features/thread-stream';
 import { AssistantMark, AssistantText, MessageBubble } from '@/entities/message';
-import { useThread } from '@/entities/thread';
+import { useCancelRun, useThread } from '@/entities/thread';
 import type { ThreadDetail } from '@/entities/thread';
+import { ApiError } from '@/shared/api/api-error';
 import { Button } from '@/shared/ui/button';
 import { Skeleton } from '@/shared/ui/skeleton';
 import { cn } from '@/shared/lib/cn';
-import { deriveChatView } from '../lib/chat-state';
+import { deriveChatView, RUN_CANCELLED } from '../lib/chat-state';
 import type { ChatActivity } from '../lib/chat-state';
 import { ChatSuggestions } from './ChatSuggestions';
 
@@ -78,6 +81,7 @@ function ChatSession({ detail, initialPrompt, onInitialPromptUsed }: ChatSession
   const { t } = useTranslation('chat');
   const { state, markRunStarted, markRunStartFailed, settle } = useThreadStream(detail.id);
   const { mutate: sendMessage, isPending: sending } = useSendMessage(detail.id);
+  const { mutate: cancelRun, isPending: stopping } = useCancelRun(detail.id);
   const view = deriveChatView(detail, state);
   const scroller = useRef<HTMLDivElement>(null);
   const following = useRef(true);
@@ -95,6 +99,21 @@ function ChatSession({ detail, initialPrompt, onInitialPromptUsed }: ChatSession
   useEffect(() => {
     settle();
   }, [detail, settle]);
+
+  // One bell entry per failed run; a deliberate stop is not a failure.
+  useEffect(() => {
+    if (state.error && state.error.code !== RUN_CANCELLED) notifyRunFailed(detail);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per `run_failed` event
+  }, [state.error]);
+
+  function stop() {
+    cancelRun(undefined, {
+      onError: (error) => {
+        // 409 `not_running`: it finished on its own, the refetched detail says so.
+        if (!ApiError.isApiError(error) || error.status !== 409) toast.error(t('stopFailed'));
+      },
+    });
+  }
 
   function send(text: string, onSent: () => void = () => undefined) {
     following.current = true;
@@ -221,6 +240,15 @@ function ChatSession({ detail, initialPrompt, onInitialPromptUsed }: ChatSession
                 {view.failure === true ? t('failure') : view.failure}
               </p>
             )}
+            {view.cancelled && (
+              <p
+                role="status"
+                className="bg-subtle text-muted-foreground flex items-start gap-2 rounded-[var(--radius-md)] border px-3 py-2 text-sm"
+              >
+                <Square className="mt-1 size-3 shrink-0 fill-current" aria-hidden="true" />
+                {t('stopped')}
+              </p>
+            )}
           </div>
         </div>
         {showJump && (
@@ -252,6 +280,8 @@ function ChatSession({ detail, initialPrompt, onInitialPromptUsed }: ChatSession
           waitingApproval={view.status === 'interrupted'}
           sending={sending}
           onSend={send}
+          onStop={stop}
+          stopping={stopping}
         />
       </div>
     </>

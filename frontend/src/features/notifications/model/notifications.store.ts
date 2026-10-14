@@ -7,6 +7,8 @@ export interface Notification {
   type: NotificationType;
   title: string;
   message: string;
+  /** In-app path the notification opens, e.g. `/app/chat/<id>`. */
+  href?: string;
   isRead: boolean;
   createdAt: Date;
 }

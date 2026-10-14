@@ -28,6 +28,18 @@ describe('pendingApprovalSchema', () => {
     expect(parsed.interrupt.kind).toBe('uncertain_execution');
   });
 
+  it('accepts expires_at, null or missing', () => {
+    const interrupt = { kind: 'approval_required', actions: [] };
+    const expiry = '2026-01-04T00:00:00Z';
+    expect(pendingApprovalSchema.parse({ ...base, interrupt, expires_at: expiry }).expires_at).toBe(
+      expiry,
+    );
+    expect(pendingApprovalSchema.parse({ ...base, interrupt, expires_at: null }).expires_at).toBe(
+      null,
+    );
+    expect(pendingApprovalSchema.parse({ ...base, interrupt }).expires_at).toBeUndefined();
+  });
+
   it('rejects an unknown interrupt kind', () => {
     expect(() =>
       pendingApprovalSchema.parse({ ...base, interrupt: { kind: 'other', actions: [] } }),

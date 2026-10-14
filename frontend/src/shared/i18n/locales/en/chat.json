@@ -28,7 +28,28 @@
     "placeholderBusy": "Waiting for the assistant…",
     "placeholderApproval": "Resolve the pending approval to continue…",
     "hint": "Enter to send · Shift+Enter for a new line",
-    "send": "Send"
+    "send": "Send",
+    "stop": "Stop"
+  },
+  "search": {
+    "label": "Search conversations",
+    "placeholder": "Search conversations…",
+    "clear": "Clear search",
+    "noResults": "No conversations match “{{query}}”."
+  },
+  "threadMenu": "Actions for {{title}}",
+  "rename": {
+    "action": "Rename",
+    "title": "Rename conversation",
+    "label": "Title",
+    "failed": "Could not rename the conversation. Please try again."
+  },
+  "delete": {
+    "action": "Delete",
+    "title": "Delete this conversation?",
+    "description": "“{{title}}” and all its messages will be permanently deleted. This can't be undone.",
+    "busy": "This conversation is busy. Stop the run or wait for it to finish, then try again.",
+    "failed": "Could not delete the conversation. Please try again."
   },
   "activity": {
     "thinking": "Thinking…",
@@ -43,6 +64,8 @@
     "failed": "Failed"
   },
   "failure": "The run failed. Send a message to retry.",
+  "stopped": "Stopped. Send a message to continue.",
+  "stopFailed": "Could not stop the run. Please try again.",
   "jumpToLatest": "Jump to latest",
   "sendError": {
     "generic": "Could not send the message. Please try again.",

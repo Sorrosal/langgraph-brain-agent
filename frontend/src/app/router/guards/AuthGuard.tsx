@@ -1,14 +1,15 @@
-import { Navigate, Outlet } from 'react-router-dom';
+import { Navigate, Outlet, useLocation } from 'react-router-dom';
 import { selectIsAuthenticated, useAuthStore } from '@/features/auth';
 import { useCurrentUser } from '@/entities/user';
 
 export function AuthGuard() {
   const isAuthenticated = useAuthStore(selectIsAuthenticated);
+  const location = useLocation();
   // Validates the stored token against the server; a 401 signs the user out (see api bridge).
   useCurrentUser();
 
   if (!isAuthenticated) {
-    return <Navigate to="/login" replace />;
+    return <Navigate to="/login" replace state={{ from: location }} />;
   }
 
   return <Outlet />;

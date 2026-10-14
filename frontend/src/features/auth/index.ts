@@ -6,5 +6,6 @@ export {
   selectIsAuthenticated,
   useAuthStore,
 } from './model/auth.store';
+export { redirectTarget } from './model/redirect';
 export { useLogin, useLogout, useRegister } from './api/auth.api';
 export type { LoginFormValues, RegisterFormValues } from './model/auth.schemas';

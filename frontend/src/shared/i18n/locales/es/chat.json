@@ -28,7 +28,28 @@
     "placeholderBusy": "Esperando al asistente…",
     "placeholderApproval": "Resuelve la aprobación pendiente para continuar…",
     "hint": "Intro para enviar · Mayús+Intro para nueva línea",
-    "send": "Enviar"
+    "send": "Enviar",
+    "stop": "Detener"
+  },
+  "search": {
+    "label": "Buscar conversaciones",
+    "placeholder": "Buscar conversaciones…",
+    "clear": "Borrar búsqueda",
+    "noResults": "Ninguna conversación coincide con «{{query}}»."
+  },
+  "threadMenu": "Acciones de {{title}}",
+  "rename": {
+    "action": "Renombrar",
+    "title": "Renombrar conversación",
+    "label": "Título",
+    "failed": "No se ha podido renombrar la conversación. Inténtalo de nuevo."
+  },
+  "delete": {
+    "action": "Eliminar",
+    "title": "¿Eliminar esta conversación?",
+    "description": "«{{title}}» y todos sus mensajes se eliminarán de forma permanente. No se puede deshacer.",
+    "busy": "Esta conversación está ocupada. Detén la ejecución o espera a que termine y vuelve a intentarlo.",
+    "failed": "No se ha podido eliminar la conversación. Inténtalo de nuevo."
   },
   "activity": {
     "thinking": "Pensando…",
@@ -43,6 +64,8 @@
     "failed": "Ha fallado"
   },
   "failure": "La ejecución ha fallado. Envía un mensaje para reintentar.",
+  "stopped": "Detenido. Envía un mensaje para continuar.",
+  "stopFailed": "No se ha podido detener la ejecución. Inténtalo de nuevo.",
   "jumpToLatest": "Ir al final",
   "sendError": {
     "generic": "No se ha podido enviar el mensaje. Inténtalo de nuevo.",

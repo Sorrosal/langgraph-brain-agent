@@ -80,7 +80,29 @@ describe('deriveChatView', () => {
       detail(),
       stream({ runStatus: 'failed', error: { code: 'run_failed', message: 'The run failed.' } }),
     );
-    expect(view).toMatchObject({ failure: 'The run failed.', busy: false });
+    expect(view).toMatchObject({ failure: 'The run failed.', cancelled: false, busy: false });
+  });
+
+  it('treats a stopped run as a neutral notice, not a failure', () => {
+    const view = deriveChatView(
+      detail(),
+      stream({
+        runStatus: 'failed',
+        error: { code: 'run_cancelled', message: 'The run was cancelled.' },
+      }),
+    );
+    expect(view).toMatchObject({ failure: null, cancelled: true, busy: false });
+  });
+
+  it('stops being cancelled once a new run starts', () => {
+    const view = deriveChatView(
+      detail(),
+      stream({
+        runStatus: 'running',
+        error: { code: 'run_cancelled', message: 'The run was cancelled.' },
+      }),
+    );
+    expect(view).toMatchObject({ failure: null, cancelled: false, busy: true });
   });
 });
 
@@ -88,5 +110,15 @@ describe('deriveChatView failures without a message', () => {
   it('flags a persisted failure so the panel shows the generic text', () => {
     const view = deriveChatView(detail({ run: { status: 'failed' } }), stream());
     expect(view.failure).toBe(true);
+  });
+});
+
+describe('deriveChatView after a reload', () => {
+  it('shows a stopped run as stopped, not as a failure', () => {
+    const view = deriveChatView(
+      detail({ run: { status: 'failed', error: 'The run was cancelled.', code: 'run_cancelled' } }),
+      stream(),
+    );
+    expect(view).toMatchObject({ cancelled: true, failure: null });
   });
 });

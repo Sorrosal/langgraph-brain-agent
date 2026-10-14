@@ -1,4 +1,4 @@
-import { ArrowUp, LoaderCircle } from 'lucide-react';
+import { ArrowUp, LoaderCircle, Square } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import type { KeyboardEvent } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -16,6 +16,11 @@ interface MessageComposerProps {
   sending: boolean;
   /** Send `text`; call `onSent` once the server accepted it so the box is cleared. */
   onSend: (text: string, onSent: () => void) => void;
+  /** Stop the active run. While a run is active (and not waiting for approval) the send button
+   *  becomes a Stop button. Without it the button keeps showing a spinner. */
+  onStop?: () => void;
+  /** The stop request is in flight. */
+  stopping?: boolean;
 }
 
 export function MessageComposer({
@@ -23,12 +28,15 @@ export function MessageComposer({
   waitingApproval = false,
   sending,
   onSend,
+  onStop,
+  stopping = false,
 }: MessageComposerProps) {
   const { t } = useTranslation('chat');
   const [text, setText] = useState('');
   const input = useRef<HTMLTextAreaElement>(null);
   const locked = busy || sending;
   const content = text.trim();
+  const canStop = busy && !waitingApproval && onStop !== undefined;
 
   // Hand the focus back when the assistant is done, so the next message can be typed at once.
   useEffect(() => {
@@ -83,19 +91,34 @@ export function MessageComposer({
           }}
           onKeyDown={onKeyDown}
         />
-        <Button
-          type="submit"
-          size="icon"
-          aria-label={t('composer.send')}
-          disabled={locked || !content}
-          className="shrink-0 rounded-full"
-        >
-          {sending || (busy && !waitingApproval) ? (
-            <LoaderCircle className="animate-spin" />
-          ) : (
-            <ArrowUp />
-          )}
-        </Button>
+        {canStop ? (
+          <Button
+            type="button"
+            size="icon"
+            variant="secondary"
+            aria-label={t('composer.stop')}
+            // The run only exists on the server once the send request has been accepted.
+            disabled={sending || stopping}
+            className="shrink-0 rounded-full max-md:size-11"
+            onClick={onStop}
+          >
+            <Square className="fill-current" />
+          </Button>
+        ) : (
+          <Button
+            type="submit"
+            size="icon"
+            aria-label={t('composer.send')}
+            disabled={locked || !content}
+            className="shrink-0 rounded-full max-md:size-11"
+          >
+            {sending || (busy && !waitingApproval) ? (
+              <LoaderCircle className="animate-spin" />
+            ) : (
+              <ArrowUp />
+            )}
+          </Button>
+        )}
       </div>
       <p className="text-faint text-2xs hidden px-4 sm:block">{t('composer.hint')}</p>
     </form>

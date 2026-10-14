@@ -27,6 +27,7 @@ import { Button } from '@/shared/ui/button';
 import { Input } from '@/shared/ui/input';
 import { Textarea } from '@/shared/ui/textarea';
 import { useSubmitReview } from '../api/review.api';
+import { DismissApprovalsButton } from './DismissApprovalsButton';
 import { argsError, buildApprovalPayload, buildUncertainPayload } from '../model/review';
 import type { ApprovalDraft, UncertainDraft } from '../model/review';
 
@@ -185,6 +186,7 @@ function ReviewShell({
   isPending,
   error,
   onSubmit,
+  dismiss,
   children,
 }: {
   kind: PendingInterrupt['kind'];
@@ -193,6 +195,8 @@ function ReviewShell({
   isPending: boolean;
   error: Error | null;
   onSubmit: () => void;
+  /** The secondary "decline everything" action, next to the submit button. */
+  dismiss: ReactNode;
   children: ReactNode;
 }) {
   const { t } = useTranslation('approvals');
@@ -246,22 +250,25 @@ function ReviewShell({
         <p className="text-muted-foreground text-sm" aria-live="polite">
           {progress}
         </p>
-        <Button
-          type="button"
-          className="max-sm:h-11 max-sm:w-full"
-          disabled={!complete || isPending}
-          aria-busy={isPending}
-          onClick={onSubmit}
-        >
-          {isPending ? (
-            <>
-              <LoaderCircle className="motion-safe:animate-spin" aria-hidden />
-              {t('review.sending')}
-            </>
-          ) : (
-            t('review.submit')
-          )}
-        </Button>
+        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center">
+          {dismiss}
+          <Button
+            type="button"
+            className="max-sm:h-11 max-sm:w-full"
+            disabled={!complete || isPending}
+            aria-busy={isPending}
+            onClick={onSubmit}
+          >
+            {isPending ? (
+              <>
+                <LoaderCircle className="motion-safe:animate-spin" aria-hidden />
+                {t('review.sending')}
+              </>
+            ) : (
+              t('review.submit')
+            )}
+          </Button>
+        </div>
       </footer>
     </section>
   );
@@ -325,6 +332,17 @@ function ApprovalForm({
       isPending={isPending}
       error={error}
       onSubmit={submit}
+      dismiss={
+        <DismissApprovalsButton
+          threadId={threadId}
+          kind={interrupt.kind}
+          size="sm"
+          disabled={isPending}
+          className="max-sm:h-11 max-sm:w-full max-sm:text-sm"
+          onSubmitting={onSubmitting}
+          onSubmitFailed={onSubmitFailed}
+        />
+      }
     >
       {interrupt.actions.map((action) => {
         const id = action.action_id;
@@ -429,6 +447,17 @@ function UncertainForm({
       isPending={isPending}
       error={error}
       onSubmit={submit}
+      dismiss={
+        <DismissApprovalsButton
+          threadId={threadId}
+          kind={interrupt.kind}
+          size="sm"
+          disabled={isPending}
+          className="max-sm:h-11 max-sm:w-full max-sm:text-sm"
+          onSubmitting={onSubmitting}
+          onSubmitFailed={onSubmitFailed}
+        />
+      }
     >
       {interrupt.actions.map((action) => {
         const draft = drafts[action.action_id];

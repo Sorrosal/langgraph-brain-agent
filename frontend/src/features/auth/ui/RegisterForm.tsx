@@ -2,7 +2,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { LoaderCircle } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { Button } from '@/shared/ui/button';
 import { cn } from '@/shared/lib/cn';
@@ -10,6 +10,7 @@ import { useRegister } from '../api/auth.api';
 import { authErrorMessage } from '../model/auth-error';
 import { MIN_PASSWORD_LENGTH, registerSchema } from '../model/auth.schemas';
 import type { RegisterFormValues } from '../model/auth.schemas';
+import { redirectTarget } from '../model/redirect';
 import { FormError } from './FormError';
 import { FormField } from './FormField';
 
@@ -20,6 +21,7 @@ interface RegisterFormProps {
 export function RegisterForm({ className }: RegisterFormProps) {
   const { t } = useTranslation('auth');
   const navigate = useNavigate();
+  const location = useLocation();
   const { mutate: registerUser, isPending, error } = useRegister();
 
   const {
@@ -34,7 +36,7 @@ export function RegisterForm({ className }: RegisterFormProps) {
     registerUser(data, {
       onSuccess: () => {
         toast.success(t('register.success'));
-        void navigate('/app/chat');
+        void navigate(redirectTarget(location.state), { replace: true });
       },
     });
   }

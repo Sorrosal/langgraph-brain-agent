@@ -1,9 +1,10 @@
 import { useTranslation } from 'react-i18next';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { LoginForm } from '@/features/auth';
 
 export default function LoginPage() {
   const { t } = useTranslation('auth');
+  const location = useLocation();
 
   return (
     <div className="flex flex-col gap-6">
@@ -18,6 +19,7 @@ export default function LoginPage() {
         {t('login.noAccount')}{' '}
         <Link
           to="/register"
+          state={location.state as unknown}
           className="text-brand-ink hover:text-foreground font-medium underline underline-offset-4"
         >
           {t('login.signUp')}

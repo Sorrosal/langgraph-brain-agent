@@ -1,6 +1,7 @@
-import { ShieldAlert, Scissors } from 'lucide-react';
+import { ShieldAlert, Scissors, Zap } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useThread } from '@/entities/thread';
+import { formatNumber } from '@/shared/lib/format';
 import { Badge } from '@/shared/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/shared/ui/card';
 import { cn } from '@/shared/lib/cn';
@@ -47,6 +48,7 @@ export function ContextReport({ threadId }: ContextReportProps) {
       color: 'bg-success',
     },
   ] as const;
+  const cached = report.cached_tokens ?? 0;
   const total = Math.max(
     parts.reduce((sum, part) => sum + part.tokens, 0),
     1,
@@ -84,7 +86,23 @@ export function ContextReport({ threadId }: ContextReportProps) {
             </div>
           ))}
         </dl>
-        {(report.cleared_tool_results > 0 || report.untrusted_in_turn) && (
+        {report.input_tokens != null && (
+          <div className="flex flex-col gap-1">
+            <Badge variant={cached > 0 ? 'success' : 'secondary'} className="w-fit">
+              <Zap className="size-3" aria-hidden="true" />
+              {t('context.usage', {
+                input: formatNumber(report.input_tokens),
+                cached: formatNumber(cached),
+                percent: formatNumber(report.input_tokens > 0 ? cached / report.input_tokens : 0, {
+                  style: 'percent',
+                  maximumFractionDigits: 0,
+                }),
+              })}
+            </Badge>
+            <p className="text-muted-foreground text-xs">{t('context.usageHint')}</p>
+          </div>
+        )}
+        {(report.cleared_tool_results > 0 || report.untrusted_in_context) && (
           <div className="flex flex-wrap gap-2">
             {report.cleared_tool_results > 0 && (
               <Badge variant="info">
@@ -92,7 +110,7 @@ export function ContextReport({ threadId }: ContextReportProps) {
                 {t('context.cleared', { count: report.cleared_tool_results })}
               </Badge>
             )}
-            {report.untrusted_in_turn && (
+            {report.untrusted_in_context && (
               <Badge variant="warning">
                 <ShieldAlert className="size-3" aria-hidden="true" />
                 {t('context.untrusted')}

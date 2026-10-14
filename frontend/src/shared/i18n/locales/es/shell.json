@@ -30,7 +30,10 @@
     "markRead": "Marcar como leída",
     "remove": "Eliminar notificación",
     "empty": "No hay notificaciones",
-    "emptyHint": "Estás al día."
+    "emptyHint": "Estás al día.",
+    "approvalNeeded": "Aprobación pendiente",
+    "outcomeUnknown": "Comprueba el resultado de una acción",
+    "runFailed": "Ha fallado una ejecución"
   },
   "toasts": {
     "region": "Notificaciones"

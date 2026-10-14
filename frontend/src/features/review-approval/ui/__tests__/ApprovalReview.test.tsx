@@ -41,12 +41,11 @@ function renderReview(interrupt: PendingInterrupt) {
   function Wrapper({ children }: { children: ReactNode }) {
     return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
   }
-  const onSubmitting = vi.fn();
-  const handlers = { onSubmitting, onSubmitFailed: vi.fn() };
+  const handlers = { onSubmitting: vi.fn(), onSubmitFailed: vi.fn() };
   render(<ApprovalReview threadId="t1" interrupt={interrupt} {...handlers} />, {
     wrapper: Wrapper,
   });
-  return onSubmitting;
+  return handlers;
 }
 
 function choose(card: string, option: string) {
@@ -135,7 +134,7 @@ describe('ApprovalReview', () => {
   });
 
   it('posts all decisions at once with the backend payload shape', async () => {
-    const onSubmitting = renderReview(approval(email, del));
+    const { onSubmitting } = renderReview(approval(email, del));
     await choose('Send email', 'Edit');
     await replaceText(/arguments/i, '{"to": "z@z.zz"}');
     await choose('delete_file', 'Reject');
@@ -173,6 +172,39 @@ describe('ApprovalReview', () => {
       expect(post).toHaveBeenCalledWith('/threads/t1/approvals', {
         decisions: { c1: { type: 'respond', message: 'Use SMS instead' } },
       });
+    });
+  });
+
+  it('dismisses every pending action after a confirmation, without any decision', async () => {
+    const { onSubmitting } = renderReview(approval(email, del));
+    await userEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
+    expect(await screen.findByRole('dialog', { name: 'Dismiss this request?' })).toHaveTextContent(
+      'rejected',
+    );
+    expect(post).not.toHaveBeenCalled();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Dismiss request' }));
+    await waitFor(() => {
+      expect(post).toHaveBeenCalledWith('/threads/t1/dismiss');
+    });
+    expect(onSubmitting).toHaveBeenCalled();
+  });
+
+  it('does not dismiss when the confirmation is cancelled', async () => {
+    renderReview(approval(email));
+    await userEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Cancel' }));
+    expect(post).not.toHaveBeenCalled();
+  });
+
+  it('hands the run status back when dismissing fails', async () => {
+    post.mockRejectedValue(new Error('Conflict'));
+    const { onSubmitFailed } = renderReview(uncertain);
+    await userEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
+    expect(await screen.findByRole('dialog')).toHaveTextContent('skipped');
+    await userEvent.click(screen.getByRole('button', { name: 'Dismiss request' }));
+    await waitFor(() => {
+      expect(onSubmitFailed).toHaveBeenCalled();
     });
   });
 

@@ -65,9 +65,11 @@
     "turn": "Turn context",
     "turnHint": "Date, user, summary and memories, refreshed every turn.",
     "tokens": "~{{count}} tokens",
+    "usage": "Input ~{{input}} tokens · {{cached}} cached ({{percent}})",
+    "usageHint": "The provider caches the stable prompt prefix, so keeping it identical between calls is what makes those tokens cheaper.",
     "cleared_one": "{{count}} old tool result cleared",
     "cleared_other": "{{count}} old tool results cleared",
-    "untrusted": "Outside content read in this turn: actions need approval",
+    "untrusted": "Outside content (an email) is in this conversation: actions need approval",
     "showTurn": "Show the turn context"
   }
 }

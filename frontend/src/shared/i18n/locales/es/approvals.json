@@ -56,6 +56,15 @@
     "sending": "Enviando…",
     "sendFailed": "No se pudieron enviar tus decisiones. No se ha cambiado nada, así que puedes volver a intentarlo."
   },
+  "dismiss": {
+    "action": "Descartar",
+    "actionFor": "Descartar: {{title}}",
+    "title": "¿Descartar esta solicitud?",
+    "descriptionApproval": "Se rechazarán todas las acciones pendientes y no se ejecutará nada. Se avisará al asistente, que responderá en la conversación.",
+    "descriptionUncertain": "Se omitirán todas las acciones dudosas sin confirmar si llegaron a ejecutarse. Se avisará al asistente, que responderá en la conversación.",
+    "confirm": "Descartar solicitud",
+    "failed": "No se ha podido descartar la solicitud. Inténtalo de nuevo."
+  },
   "errors": {
     "noDecision": "Elige una decisión.",
     "invalidJson": "Los argumentos deben ser un JSON válido.",
@@ -66,6 +75,8 @@
     "untitled": "Nueva conversación",
     "actions_one": "{{count}} acción",
     "actions_other": "{{count}} acciones",
+    "expiresIn": "Caduca {{when}}",
+    "expired": "Caducada",
     "groupApproval": "Esperando aprobación",
     "groupUncertain": "Resultado desconocido",
     "loadFailed": "No se pudieron cargar las aprobaciones pendientes.",

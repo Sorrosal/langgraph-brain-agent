@@ -5,10 +5,25 @@ import { ApiError } from '@/shared/api/api-error';
 import { describeSendError } from '../../model/send-error';
 import { MessageComposer } from '../MessageComposer';
 
-function renderComposer(props: { busy?: boolean; sending?: boolean } = {}) {
+function renderComposer(
+  props: {
+    busy?: boolean;
+    sending?: boolean;
+    waitingApproval?: boolean;
+    stopping?: boolean;
+    onStop?: () => void;
+  } = {},
+) {
   const onSend = vi.fn<(text: string, onSent: () => void) => void>();
   render(
-    <MessageComposer busy={props.busy ?? false} sending={props.sending ?? false} onSend={onSend} />,
+    <MessageComposer
+      busy={props.busy ?? false}
+      sending={props.sending ?? false}
+      waitingApproval={props.waitingApproval ?? false}
+      stopping={props.stopping ?? false}
+      onSend={onSend}
+      {...(props.onStop ? { onStop: props.onStop } : {})}
+    />,
   );
   return { onSend, box: screen.getByRole('textbox', { name: /message/i }) };
 }
@@ -54,6 +69,35 @@ describe('MessageComposer', () => {
     const { onSend, box } = renderComposer({ sending: true });
     await userEvent.type(box, 'hello{Enter}');
     expect(onSend).not.toHaveBeenCalled();
+  });
+
+  it('turns the send button into Stop while a run is active', async () => {
+    const onStop = vi.fn();
+    renderComposer({ busy: true, onStop });
+    expect(screen.queryByRole('button', { name: 'Send' })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Stop' }));
+    expect(onStop).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps Stop disabled while the stop or the send request is in flight', () => {
+    const { unmount } = render(
+      <MessageComposer busy sending={false} stopping onSend={vi.fn()} onStop={vi.fn()} />,
+    );
+    expect(screen.getByRole('button', { name: 'Stop' })).toBeDisabled();
+    unmount();
+    render(<MessageComposer busy sending onSend={vi.fn()} onStop={vi.fn()} />);
+    expect(screen.getByRole('button', { name: 'Stop' })).toBeDisabled();
+  });
+
+  it('does not offer Stop while waiting for an approval or when idle', () => {
+    const { unmount } = render(
+      <MessageComposer busy waitingApproval sending={false} onSend={vi.fn()} onStop={vi.fn()} />,
+    );
+    expect(screen.queryByRole('button', { name: 'Stop' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Send' })).toBeDisabled();
+    unmount();
+    render(<MessageComposer busy={false} sending={false} onSend={vi.fn()} onStop={vi.fn()} />);
+    expect(screen.queryByRole('button', { name: 'Stop' })).not.toBeInTheDocument();
   });
 });
 

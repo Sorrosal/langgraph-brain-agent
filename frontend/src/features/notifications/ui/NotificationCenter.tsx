@@ -9,7 +9,9 @@ import {
   TriangleAlert,
   type LucideIcon,
 } from 'lucide-react';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Link } from 'react-router-dom';
 import { Button } from '@/shared/ui/button';
 import {
   DropdownMenu,
@@ -38,9 +40,10 @@ export function NotificationCenter() {
   const { t } = useTranslation('shell');
   const { notifications, markAsRead, markAllAsRead, removeNotification } = useNotificationsStore();
   const unreadCount = useNotificationsStore(selectUnreadCount);
+  const [open, setOpen] = useState(false);
 
   return (
-    <DropdownMenu>
+    <DropdownMenu open={open} onOpenChange={setOpen}>
       <DropdownMenuTrigger asChild>
         <Button
           variant="ghost"
@@ -108,7 +111,20 @@ export function NotificationCenter() {
                 >
                   <Icon className={cn('mt-0.5', tone)} aria-hidden="true" />
                   <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-                    <span className="text-sm font-medium">{notification.title}</span>
+                    {notification.href ? (
+                      <Link
+                        to={notification.href}
+                        className="focus-visible:ring-ring -m-1 rounded-[var(--radius-sm)] p-1 text-sm font-medium hover:underline focus-visible:ring-2 focus-visible:outline-none"
+                        onClick={() => {
+                          markAsRead(notification.id);
+                          setOpen(false);
+                        }}
+                      >
+                        {notification.title}
+                      </Link>
+                    ) : (
+                      <span className="text-sm font-medium">{notification.title}</span>
+                    )}
                     <p className="text-muted-foreground text-xs">{notification.message}</p>
                     <time
                       dateTime={notification.createdAt.toISOString()}

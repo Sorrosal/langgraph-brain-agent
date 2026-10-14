@@ -1,10 +1,19 @@
-import { ChevronRight, CircleAlert, CircleHelp, ShieldCheck, ShieldAlert } from 'lucide-react';
+import {
+  ChevronRight,
+  CircleAlert,
+  CircleHelp,
+  Clock,
+  ShieldCheck,
+  ShieldAlert,
+} from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 import { RiskBadge, useToolLabel } from '@/entities/approval';
 import type { ActionRequest } from '@/entities/approval';
 import { usePendingApprovals } from '@/entities/pending-approval';
 import type { PendingApproval } from '@/entities/pending-approval';
+import { DismissApprovalsButton } from '@/features/review-approval';
+import { cn } from '@/shared/lib/cn';
 import { formatRelativeTime } from '@/shared/lib/format';
 import { Badge } from '@/shared/ui/badge';
 import { Button, buttonVariants } from '@/shared/ui/button';
@@ -27,19 +36,53 @@ function highestRisk(actions: readonly ActionRequest[]): Risk {
   );
 }
 
+const SOON_MS = 24 * 60 * 60 * 1000;
+
+/** Whether a request is already past (or close to) the time the server dismisses it on its own. */
+function expiryState(
+  expiresAt: string | null | undefined,
+): { expired: boolean; soon: boolean } | null {
+  if (!expiresAt) return null;
+  const at = Date.parse(expiresAt);
+  if (Number.isNaN(at)) return null;
+  const remaining = at - Date.now();
+  return { expired: remaining <= 0, soon: remaining < SOON_MS };
+}
+
 function QueueItem({ item }: { item: PendingApproval }) {
   const { t } = useTranslation('approvals');
   const toolLabel = useToolLabel();
-  const { thread_id, title, updated_at, interrupt } = item;
+  const { thread_id, title, updated_at, expires_at, interrupt } = item;
   const actions: readonly { tool_name: string }[] = interrupt.actions;
   const tools = [...new Set(actions.map((action) => toolLabel(action.tool_name)))].join(', ');
+  const expiry = expiryState(expires_at);
+  const name = title || t('queue.untitled');
 
   return (
-    <Link to={`/app/chat/${thread_id}`} className="group block rounded-[var(--radius-lg)]">
-      <Card className="group-hover:border-brand/40 group-hover:shadow-e2 flex flex-wrap items-center gap-x-4 gap-y-2 p-4 transition-[border-color,box-shadow]">
+    // The dismiss button cannot live inside the link, so the card hosts both side by side.
+    <Card className="hover:border-brand/40 hover:shadow-e2 flex flex-wrap items-center gap-x-2 gap-y-1 p-2 transition-[border-color,box-shadow]">
+      <Link
+        to={`/app/chat/${thread_id}`}
+        className="group focus-visible:ring-ring flex min-w-0 flex-1 basis-72 flex-wrap items-center gap-x-4 gap-y-2 rounded-[var(--radius-md)] p-2 focus-visible:ring-2 focus-visible:outline-none"
+      >
         <div className="min-w-0 flex-1 basis-56">
-          <p className="truncate font-medium">{title || t('queue.untitled')}</p>
+          <p className="truncate font-medium">{name}</p>
           <p className="text-muted-foreground truncate text-sm">{tools}</p>
+          {expiry && expires_at && (
+            <p
+              className={cn(
+                'mt-0.5 flex items-center gap-1 text-xs',
+                expiry.soon ? 'text-warning-fg' : 'text-faint',
+              )}
+            >
+              <Clock className="size-3" aria-hidden />
+              <time dateTime={expires_at}>
+                {expiry.expired
+                  ? t('queue.expired')
+                  : t('queue.expiresIn', { when: formatRelativeTime(expires_at) })}
+              </time>
+            </p>
+          )}
         </div>
         <div className="text-muted-foreground flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
           {interrupt.kind === 'approval_required' && (
@@ -54,8 +97,15 @@ function QueueItem({ item }: { item: PendingApproval }) {
             aria-hidden
           />
         </div>
-      </Card>
-    </Link>
+      </Link>
+      <DismissApprovalsButton
+        threadId={thread_id}
+        kind={interrupt.kind}
+        size="sm"
+        label={t('dismiss.actionFor', { title: name })}
+        className="shrink-0 max-sm:h-11 max-sm:w-full"
+      />
+    </Card>
   );
 }
 

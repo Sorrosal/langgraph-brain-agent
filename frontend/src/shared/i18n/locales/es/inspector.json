@@ -65,9 +65,11 @@
     "turn": "Contexto del turno",
     "turnHint": "Fecha, usuario, resumen y recuerdos; se renueva en cada turno.",
     "tokens": "~{{count}} tokens",
+    "usage": "Entrada ~{{input}} tokens · {{cached}} en caché ({{percent}})",
+    "usageHint": "El proveedor cachea el prefijo estable del prompt, así que mantenerlo idéntico entre llamadas es lo que abarata esos tokens.",
     "cleared_one": "{{count}} resultado antiguo retirado",
     "cleared_other": "{{count}} resultados antiguos retirados",
-    "untrusted": "Se ha leído contenido externo en este turno: las acciones requieren aprobación",
+    "untrusted": "Hay contenido externo (un email) en esta conversación: las acciones requieren aprobación",
     "showTurn": "Ver el contexto del turno"
   }
 }

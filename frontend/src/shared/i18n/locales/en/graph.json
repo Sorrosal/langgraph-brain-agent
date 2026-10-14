@@ -1,0 +1,107 @@
+{
+  "description": "Everything the agent knows, connected: your memories, the facts shared by your organisation, the rules it follows and your business data. Drag nodes, scroll to zoom and select one to see its details.",
+  "canvas": {
+    "title": "Knowledge graph",
+    "description": "Interactive graph with {{nodes}} items and {{edges}} connections. Every item is focusable; press Enter to select it. A text list of all items follows the graph."
+  },
+  "search": {
+    "label": "Search the graph",
+    "placeholder": "Search memories, contacts, rules…",
+    "results_one": "{{count}} match",
+    "results_other": "{{count}} matches",
+    "none": "No matches"
+  },
+  "filters": {
+    "label": "Show or hide item types"
+  },
+  "stats": {
+    "memory_one": "{{count}} memory",
+    "memory_other": "{{count}} memories",
+    "org_one": "{{count}} organisation fact",
+    "org_other": "{{count}} organisation facts",
+    "rule_one": "{{count}} rule",
+    "rule_other": "{{count}} rules",
+    "guideline_one": "{{count}} guideline",
+    "guideline_other": "{{count}} guidelines",
+    "tool_one": "{{count}} tool",
+    "tool_other": "{{count}} tools",
+    "contact_one": "{{count}} contact",
+    "contact_other": "{{count}} contacts",
+    "company_one": "{{count}} company",
+    "company_other": "{{count}} companies",
+    "deal_one": "{{count}} deal",
+    "deal_other": "{{count}} deals",
+    "task_one": "{{count}} task",
+    "task_other": "{{count}} tasks"
+  },
+  "types": {
+    "user": "You",
+    "hub": "Group",
+    "memory_kind": "Memory kind",
+    "memory": "Memory",
+    "org": "Organisation fact",
+    "rule": "Rule",
+    "guideline": "Guideline",
+    "tool": "Tool",
+    "company": "Company",
+    "contact": "Contact",
+    "deal": "Deal",
+    "task": "Task",
+    "other": "Other"
+  },
+  "groups": {
+    "fact": "Fact",
+    "preference": "Preference",
+    "episode": "Episode",
+    "block": "Blocked",
+    "require_approval": "Requires approval",
+    "open": "Open",
+    "done": "Done"
+  },
+  "hubs": {
+    "org": "Organisation",
+    "rules": "Rules",
+    "crm": "CRM",
+    "tasks": "Tasks"
+  },
+  "relations": {
+    "has": "Contains",
+    "governs": "Governs",
+    "works_at": "Works at",
+    "deal_of": "Deal of",
+    "mentions": "Mentions"
+  },
+  "legend": {
+    "title": "Legend",
+    "ruleApproval": "Rule that needs approval",
+    "ruleBlock": "Rule that blocks a tool",
+    "link": "Connection",
+    "mention": "A memory mentions a contact or company"
+  },
+  "zoom": {
+    "in": "Zoom in",
+    "out": "Zoom out",
+    "fit": "Fit the graph to the view"
+  },
+  "panel": {
+    "label": "Selected item",
+    "close": "Close details",
+    "added": "Added {{when}}",
+    "connections_one": "Connection ({{count}})",
+    "connections_other": "Connections ({{count}})",
+    "noConnections": "Nothing is connected to this item.",
+    "empty": "Select an item to see its details and what it connects to."
+  },
+  "list": {
+    "title": "All items by type"
+  },
+  "truncated": "The graph is too large to show in full, so some items are left out.",
+  "error": {
+    "title": "Could not load the knowledge graph."
+  },
+  "empty": {
+    "title": "Nothing to show yet.",
+    "description": "Memories appear here as you chat: the agent keeps facts, preferences and episodes, and links them to the contacts and companies they mention.",
+    "openChat": "Open chat"
+  }
+}

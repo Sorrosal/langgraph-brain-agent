@@ -17,7 +17,10 @@ export const contextReportSchema = z.object({
   history_messages: z.number(),
   history_tokens: z.number(),
   cleared_tool_results: z.number(),
-  untrusted_in_turn: z.boolean(),
+  untrusted_in_context: z.boolean().default(false),
+  /** Provider-reported usage of the last model call; null when the provider gives none. */
+  input_tokens: z.number().nullish(),
+  cached_tokens: z.number().nullish(),
 });
 
 export const runStatusSchema = z.enum(['idle', 'running', 'interrupted', 'failed']);
@@ -26,7 +29,12 @@ export const threadDetailSchema = threadSchema.extend({
   messages: z.array(messageSchema),
   summary: z.string().nullable(),
   pending_interrupt: pendingInterruptSchema.nullable(),
-  run: z.object({ status: runStatusSchema, error: z.string().nullish() }),
+  run: z.object({
+    status: runStatusSchema,
+    error: z.string().nullish(),
+    code: z.string().nullish(),
+  }),
   approvals: z.array(z.record(z.string(), z.unknown())),
-  context_report: contextReportSchema.nullish(),
+  // Diagnostics only: a report from an older backend must never break the conversation.
+  context_report: contextReportSchema.nullish().catch(null),
 });
