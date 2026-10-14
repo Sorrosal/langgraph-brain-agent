@@ -15,6 +15,7 @@ from brain_agent.brain.memory import MemoryService
 from brain_agent.brain.rules import RulesEngine, YamlRuleSource
 from brain_agent.config import Settings
 from brain_agent.graph.builder import build_graph
+from brain_agent.hitl.policy import CompositeApprovalPolicy, MetadataApprovalPolicy
 from brain_agent.integrations.crm import CrmRepository
 from brain_agent.integrations.email import EmailGateway
 from brain_agent.integrations.email_factory import create_email_gateway
@@ -30,7 +31,7 @@ from brain_agent.runtime.recovery import RecoveryWorker
 from brain_agent.runtime.runner import AgentRunner, RunResult
 from brain_agent.runtime.supervisor import RunSupervisor
 from brain_agent.tools.registry import build_business_tools
-from brain_agent.tools.rules_tools import build_rules_tools
+from brain_agent.tools.rules_tools import RulesEditPolicy, build_rules_tools
 
 Ping = Callable[[], Awaitable[None]]
 
@@ -119,6 +120,9 @@ def assemble_container(
         ),
         memory_extraction=settings.memory_extraction_enabled,
         memory_recall_limit=settings.memory_recall_limit,
+        approval_policy=CompositeApprovalPolicy(
+            MetadataApprovalPolicy(), RulesEditPolicy(settings.rules_dir, rules)
+        ),
     )
     runner = AgentRunner(graph, runs=runs)
     events = EventBroker()

@@ -149,9 +149,12 @@ What the model sees on every call, and why:
   up duplicates. Only memories it was shown and that were learnt from chats can change; the ones
   the user wrote by hand stay untouched. It never stores the assistant's own rules or
   capabilities.
-- **Rules from the chat.** `update_rules_file` (admins, always approved) may only add hard rules
-  or tighten `require_approval` to `block`; removing or relaxing one is refused and left to the
-  Brain page. Every change is logged as `rules_updated`.
+- **Rules from the chat.** The agent never rewrites rule files. `add_rule` (admins, always
+  approved) takes the fields of one guideline or hard rule and appends it to `rules/chat.yaml`,
+  a file only that tool writes; existing rules cannot be removed, relaxed or corrupted from the
+  chat (letting the model copy back a whole YAML file broke regex escapes in practice). The
+  approval gate validates the new rule set first (`RulesEditPolicy`), so an invalid rule goes
+  back to the agent instead of to a reviewer. Every change is logged as `rules_updated`.
 - **Observability.** Each model call records `context_report` (approximate tokens per section,
   cleared results, untrusted content in scope, the turn-context text); the inspector shows it.
 - **Evals.** `backend/evals/` has three suites with one scorecard (`uv run python -m evals.run

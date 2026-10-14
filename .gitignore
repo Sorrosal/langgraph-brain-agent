@@ -38,3 +38,6 @@ desktop.ini
 *.swp
 *.swo
 *~
+
+# Rules the agent adds from the chat (runtime data)
+rules/chat.yaml

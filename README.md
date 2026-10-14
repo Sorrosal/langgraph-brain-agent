@@ -113,7 +113,7 @@ Names are case-insensitive. They are defined in `backend/src/brain_agent/config.
 | `OPENAI_MODEL` | `gpt-4o-mini` | Chat model. |
 | `OPENAI_EMBEDDING_MODEL` | `text-embedding-3-small` | Embedding model for memory search. |
 | `OPENAI_TIMEOUT_SECONDS` | `60` | Timeout of each OpenAI request. |
-| `JWT_SECRET` | _(generated in dev)_ | HS256 signing key; 32+ characters, required in production. |
+| `JWT_SECRET` | _(generated in dev)_ | HS256 signing key; 32+ characters, required in production. In development set it too, or every backend restart signs everyone out. |
 | `JWT_TTL_MINUTES` | `60` | Token lifetime, 5 to 1440. |
 | `AUTH_HASH_CONCURRENCY` | `4` | Password hashes/verifications running at once. |
 | `ALLOW_REGISTRATION` | _(unset)_ | Open self-registration; unset means on in development, off otherwise. |
