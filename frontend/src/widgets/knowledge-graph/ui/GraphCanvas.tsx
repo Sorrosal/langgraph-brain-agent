@@ -107,6 +107,9 @@ export function GraphCanvas({
   // Fit the whole graph when it (re)loads, and on resize until the user pans or zooms by hand
   // (a mobile address bar collapsing resizes the canvas mid-gesture).
   const touched = useRef(false);
+  // Every active pointer, for two-finger pinch zoom on touch screens.
+  const pointers = useRef(new Map<number, { x: number; y: number }>());
+  const pinch = useRef<{ dist: number; midX: number; midY: number } | null>(null);
   const fittedModel = useRef(model);
   useEffect(() => {
     if (fittedModel.current !== model) {
@@ -164,7 +167,7 @@ export function GraphCanvas({
 
   const onNodeDown = (e: React.PointerEvent<SVGGElement>, id: string) => {
     const p = pos.get(id);
-    if (e.button !== 0 || gesture.current || !p) return;
+    if (e.button !== 0 || gesture.current || pinch.current || !p) return;
     e.stopPropagation();
     const g = toGraph(e);
     svgRef.current?.setPointerCapture(e.pointerId);
@@ -181,7 +184,7 @@ export function GraphCanvas({
   };
 
   const onBackgroundDown = (e: React.PointerEvent<SVGSVGElement>) => {
-    if (e.button !== 0 || gesture.current) return;
+    if (e.button !== 0 || gesture.current || pinch.current) return;
     svgRef.current?.setPointerCapture(e.pointerId);
     gesture.current = {
       kind: 'pan',
@@ -194,7 +197,53 @@ export function GraphCanvas({
     };
   };
 
+  const pinchState = () => {
+    const [a, b] = [...pointers.current.values()];
+    if (!a || !b) return null;
+    return {
+      dist: Math.hypot(a.x - b.x, a.y - b.y) || 1,
+      midX: (a.x + b.x) / 2,
+      midY: (a.y + b.y) / 2,
+    };
+  };
+
+  const onPointerDownCapture = (e: React.PointerEvent<SVGSVGElement>) => {
+    pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pointers.current.size === 2) {
+      // A second finger turns whatever was starting into a pinch: no drag, no selection.
+      svgRef.current?.setPointerCapture(e.pointerId);
+      gesture.current = null;
+      pinch.current = pinchState();
+    }
+  };
+
+  const releasePointer = (e: React.PointerEvent<SVGSVGElement>) => {
+    pointers.current.delete(e.pointerId);
+    if (pointers.current.size < 2) pinch.current = null;
+  };
+
   const onPointerMove = (e: React.PointerEvent<SVGSVGElement>) => {
+    if (pointers.current.has(e.pointerId)) {
+      pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    }
+    const start = pinch.current;
+    const now = start && pinchState();
+    if (start && now) {
+      const rect = svgRef.current?.getBoundingClientRect();
+      const px = now.midX - (rect?.left ?? 0);
+      const py = now.midY - (rect?.top ?? 0);
+      touched.current = true;
+      setView((v) => {
+        const zoomed = zoomAt(v, now.dist / start.dist, px, py);
+        return {
+          ...zoomed,
+          x: zoomed.x + now.midX - start.midX,
+          y: zoomed.y + now.midY - start.midY,
+        };
+      });
+      pinch.current = now;
+      return;
+    }
     const g = gesture.current;
     if (g?.pointerId !== e.pointerId) return;
     const dx = e.clientX - g.startX;
@@ -250,12 +299,15 @@ export function GraphCanvas({
         aria-labelledby={titleId}
         aria-describedby={descId}
         className="absolute inset-0 size-full cursor-grab touch-none select-none active:cursor-grabbing"
+        onPointerDownCapture={onPointerDownCapture}
         onPointerDown={onBackgroundDown}
         onPointerMove={onPointerMove}
         onPointerUp={(e) => {
+          releasePointer(e);
           endGesture(e, false);
         }}
         onPointerCancel={(e) => {
+          releasePointer(e);
           endGesture(e, true);
         }}
         onKeyDown={(e) => {

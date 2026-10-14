@@ -43,11 +43,11 @@
     "remember": "Save memory",
     "recall": "Recall memories",
     "read_rules": "Read rules",
-    "update_rules_file": "Change rules",
     "crm_create_deal": "Create deal",
     "crm_get_contact": "Open contact",
     "crm_list_deals": "List deals",
     "read_email": "Read email",
-    "search_inbox": "Search inbox"
+    "search_inbox": "Search inbox",
+    "add_rule": "Add rule"
   }
 }

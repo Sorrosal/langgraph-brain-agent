@@ -43,11 +43,11 @@
     "remember": "Guardar recuerdo",
     "recall": "Consultar memoria",
     "read_rules": "Leer reglas",
-    "update_rules_file": "Cambiar reglas",
     "crm_create_deal": "Crear oportunidad",
     "crm_get_contact": "Ver contacto",
     "crm_list_deals": "Listar oportunidades",
     "read_email": "Leer email",
-    "search_inbox": "Buscar en la bandeja"
+    "search_inbox": "Buscar en la bandeja",
+    "add_rule": "Añadir regla"
   }
 }

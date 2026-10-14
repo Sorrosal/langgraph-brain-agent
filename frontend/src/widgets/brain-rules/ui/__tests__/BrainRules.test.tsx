@@ -67,7 +67,7 @@ describe('BrainRules', () => {
     signIn('admin');
     renderWithProviders(<BrainRules />);
     const editor = await screen.findByLabelText('base.yaml');
-    expect(screen.getByText('update_rules_file')).toBeInTheDocument();
+    expect(screen.getByText('add_rule')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Discard changes' })).toBeDisabled();
 
     await userEvent.type(editor, 'x');

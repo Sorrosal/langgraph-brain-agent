@@ -45,7 +45,7 @@ const TOOL_ICONS: Partial<Record<string, LucideIcon>> = {
   remember: Brain,
   recall: Brain,
   read_rules: FileText,
-  update_rules_file: FileText,
+  add_rule: FileText,
 };
 
 /** Longer or multi-line values get their own scrollable block. */

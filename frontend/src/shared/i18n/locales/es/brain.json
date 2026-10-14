@@ -132,7 +132,7 @@
     "files": {
       "title": "Archivos de reglas",
       "description": "El YAML que origina todo lo anterior.",
-      "chatHint": "También puedes cambiar las reglas pidiéndoselo al agente en el chat. Usa la herramienta <code>update_rules_file</code>, que siempre te pide aprobación antes de guardar.",
+      "chatHint": "También puedes añadir reglas pidiéndoselo al agente en el chat. Usa la herramienta <code>add_rule</code>: solo puede añadir pautas o reglas estrictas nuevas (nunca cambiar ni quitar las de aquí) y siempre te pide aprobación antes.",
       "unsaved": "Cambios sin guardar",
       "save": "Guardar {{name}}",
       "discard": "Descartar cambios",

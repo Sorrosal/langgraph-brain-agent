@@ -132,7 +132,7 @@
     "files": {
       "title": "Rule files",
       "description": "The YAML source of everything above.",
-      "chatHint": "You can also change the rules by asking the agent in the chat. It uses the <code>update_rules_file</code> tool, which always asks for your approval before saving.",
+      "chatHint": "You can also add rules by asking the agent in the chat. It uses the <code>add_rule</code> tool: it can only add new guidelines or hard rules (never change or remove the ones here), and it always asks for your approval first.",
       "unsaved": "Unsaved changes",
       "save": "Save {{name}}",
       "discard": "Discard changes",
