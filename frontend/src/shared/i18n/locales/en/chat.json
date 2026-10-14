@@ -72,5 +72,6 @@
     "busy": "This conversation is busy. Wait for the current run to finish or resolve the pending approval.",
     "tooFast": "You are sending messages too fast. Please wait a moment.",
     "tooFastWait": "You are sending messages too fast. Try again in {{seconds}} seconds."
-  }
+  },
+  "title": "Chat"
 }

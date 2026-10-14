@@ -13,6 +13,6 @@ async function fetchMe(): Promise<User> {
 }
 
 /** The signed-in user as the server sees it (also validates the stored token). */
-export function useCurrentUser() {
-  return useQuery({ queryKey: userKeys.me, queryFn: fetchMe });
+export function useCurrentUser(enabled = true) {
+  return useQuery({ queryKey: userKeys.me, queryFn: fetchMe, enabled });
 }

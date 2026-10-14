@@ -61,7 +61,9 @@ function ThreadItem({ thread, onRename, onDelete }: ThreadItemProps) {
         }
       >
         <span className="truncate">{label}</span>
-        <span className="text-faint text-2xs">{formatRelativeTime(thread.updated_at)}</span>
+        <span className="text-muted-foreground text-2xs">
+          {formatRelativeTime(thread.updated_at)}
+        </span>
       </NavLink>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>

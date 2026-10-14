@@ -72,17 +72,17 @@ export function ContextReport({ threadId }: ContextReportProps) {
         </div>
         <dl className="grid gap-3 sm:grid-cols-3">
           {parts.map((part) => (
-            <div key={part.key} className="flex gap-2.5">
-              <span
-                className={cn('mt-1.5 size-2.5 shrink-0 rounded-full', part.color)}
-                aria-hidden="true"
-              />
-              <div className="flex flex-col">
-                <dt className="text-sm font-medium">{t(`context.${part.key}`)}</dt>
-                <dd className="text-muted-foreground text-xs">
-                  {t('context.tokens', { count: part.tokens })} · {part.hint}
-                </dd>
-              </div>
+            <div key={part.key} className="flex flex-col pl-5">
+              <dt className="relative text-sm font-medium">
+                <span
+                  className={cn('absolute top-1.5 -left-5 size-2.5 rounded-full', part.color)}
+                  aria-hidden="true"
+                />
+                {t(`context.${part.key}`)}
+              </dt>
+              <dd className="text-muted-foreground text-xs">
+                {t('context.tokens', { count: part.tokens })} · {part.hint}
+              </dd>
             </div>
           ))}
         </dl>

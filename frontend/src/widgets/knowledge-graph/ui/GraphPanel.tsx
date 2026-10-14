@@ -69,7 +69,7 @@ export function GraphPanel({ node, neighbours, onSelect, onClose, className }: G
             </Button>
           </div>
 
-          <h3 className="text-base font-semibold break-words">{label(node)}</h3>
+          <h2 className="text-base font-semibold break-words">{label(node)}</h2>
           {node.detail && (
             <p className="text-reading text-foreground/90 break-words whitespace-pre-wrap">
               {node.detail}

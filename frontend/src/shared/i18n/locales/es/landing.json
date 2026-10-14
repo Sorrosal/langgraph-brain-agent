@@ -217,7 +217,9 @@
         "items": {
           "store": "Hechos, preferencias y episodios guardados en un almacén PostgreSQL",
           "recall": "Recuperación semántica con pgvector",
-          "lifecycle": "Se recupera al inicio de un turno y se extrae al final"
+          "lifecycle": "Se recupera al inicio de un turno y se extrae al final",
+          "upkeep": "Se corrige y actualiza en vez de duplicarse; nunca aprende de un email",
+          "graph": "Visible como grafo de conocimiento: recuerdos, reglas, CRM y tareas conectados"
         }
       },
       "rules": {
@@ -229,11 +231,13 @@
         }
       },
       "budget": {
-        "title": "Presupuesto de contexto",
+        "title": "Ingeniería de contexto",
         "items": {
           "assembled": "El prompt se ensambla dentro de un presupuesto de tamaño",
           "folded": "Los mensajes antiguos se resumen en un resumen acumulado",
-          "overBudget": "El resumen solo se ejecuta cuando el historial supera el presupuesto"
+          "cache": "Prompt estable y cacheable; fecha, usuario y recuerdos van en un bloque por turno",
+          "untrusted": "Los emails entran como contenido no fiable: lo que venga después requiere aprobación",
+          "evals": "Evals de contexto en CI: caché, presupuesto, aislamiento y calidad de la memoria"
         }
       }
     }
@@ -244,13 +248,22 @@
     "diagram": "Diagrama de arquitectura",
     "stackLabel": "Stack tecnológico",
     "boxes": {
-      "react": { "title": "React", "detail": "Interfaz con Feature-Sliced Design" },
-      "api": { "title": "FastAPI", "detail": "Streaming SSE, autenticación JWT" },
+      "react": {
+        "title": "React",
+        "detail": "Interfaz con Feature-Sliced Design"
+      },
+      "api": {
+        "title": "FastAPI",
+        "detail": "Streaming SSE, autenticación JWT"
+      },
       "runtime": {
         "title": "Runtime de LangGraph",
         "detail": "Grafo, runner, worker de recuperación"
       },
-      "openai": { "title": "OpenAI", "detail": "Modelos de chat y de embeddings" },
+      "openai": {
+        "title": "OpenAI",
+        "detail": "Modelos de chat y de embeddings"
+      },
       "postgres": {
         "title": "PostgreSQL",
         "detail": "Checkpoints, almacén + pgvector, ejecuciones, registro"

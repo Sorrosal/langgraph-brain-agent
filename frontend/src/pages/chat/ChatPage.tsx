@@ -24,7 +24,11 @@ export default function ChatPage() {
 
   return (
     <div className="grid h-full min-h-0 grid-cols-[minmax(0,1fr)] md:grid-cols-[17rem_minmax(0,1fr)]">
-      <aside className={cn('bg-subtle/60 min-h-0 border-r', threadId ? 'hidden md:flex' : 'flex')}>
+      <h1 className="sr-only">{t('title')}</h1>
+      <aside
+        aria-label={t('conversations')}
+        className={cn('bg-subtle/60 min-h-0 border-r', threadId ? 'hidden md:flex' : 'flex')}
+      >
         <ThreadList className="w-full" />
       </aside>
       <div className={cn('min-h-0 flex-col', threadId ? 'flex' : 'hidden md:flex')}>

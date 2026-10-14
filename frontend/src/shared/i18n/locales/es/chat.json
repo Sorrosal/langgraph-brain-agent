@@ -72,5 +72,6 @@
     "busy": "Esta conversación está ocupada. Espera a que termine la ejecución actual o resuelve la aprobación pendiente.",
     "tooFast": "Estás enviando mensajes demasiado rápido. Espera un momento.",
     "tooFastWait": "Estás enviando mensajes demasiado rápido. Vuelve a intentarlo en {{seconds}} segundos."
-  }
+  },
+  "title": "Chat"
 }

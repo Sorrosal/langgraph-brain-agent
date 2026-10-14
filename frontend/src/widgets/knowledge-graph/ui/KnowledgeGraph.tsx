@@ -101,7 +101,7 @@ function Explorer({ data }: { data: KnowledgeGraphData }) {
       <section className="sr-only" aria-label={t('list.title')}>
         {groupByType(visible.nodes).map(([type, list]) => (
           <div key={type}>
-            <h3>{t(`types.${type}`)}</h3>
+            <h2>{t(`types.${type}`)}</h2>
             <ul>
               {list.map((n) => (
                 <li key={n.id}>{n.detail ? `${label(n)}: ${n.detail}` : label(n)}</li>

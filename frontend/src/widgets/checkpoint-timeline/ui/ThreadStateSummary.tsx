@@ -70,7 +70,12 @@ export function ThreadStateSummary({ threadId }: ThreadStateSummaryProps) {
         {thread.approvals.length === 0 ? (
           <p className="text-muted-foreground">{t('state.noApprovals')}</p>
         ) : (
-          <div className="overflow-x-auto">
+          <div
+            className="overflow-x-auto"
+            tabIndex={0}
+            role="region"
+            aria-label={t('state.auditLabel')}
+          >
             <table className="w-full text-left" aria-label={t('state.auditLabel')}>
               <thead className="text-muted-foreground text-xs">
                 <tr>

@@ -217,7 +217,9 @@
         "items": {
           "store": "Facts, preferences and episodes kept in a PostgreSQL store",
           "recall": "Semantic recall through pgvector",
-          "lifecycle": "Recalled at the start of a turn, extracted at the end"
+          "lifecycle": "Recalled at the start of a turn, extracted at the end",
+          "upkeep": "Corrected and updated instead of duplicated; never learns from an email",
+          "graph": "Visible as a knowledge graph: memories, rules, CRM and tasks connected"
         }
       },
       "rules": {
@@ -229,11 +231,13 @@
         }
       },
       "budget": {
-        "title": "Context budget",
+        "title": "Context engineering",
         "items": {
           "assembled": "The prompt is assembled within a size budget",
           "folded": "Old messages are folded into a running summary",
-          "overBudget": "Summarization only runs when the history is over budget"
+          "cache": "A stable, cacheable prompt; date, user and memories go in a per-turn block",
+          "untrusted": "Emails enter as untrusted content: whatever follows needs approval",
+          "evals": "Context evals in CI: caching, budget, isolation and memory quality"
         }
       }
     }
@@ -244,10 +248,22 @@
     "diagram": "Architecture diagram",
     "stackLabel": "Technology stack",
     "boxes": {
-      "react": { "title": "React", "detail": "Feature-Sliced Design UI" },
-      "api": { "title": "FastAPI", "detail": "SSE streaming, JWT auth" },
-      "runtime": { "title": "LangGraph runtime", "detail": "Graph, runner, recovery worker" },
-      "openai": { "title": "OpenAI", "detail": "Chat and embedding models" },
+      "react": {
+        "title": "React",
+        "detail": "Feature-Sliced Design UI"
+      },
+      "api": {
+        "title": "FastAPI",
+        "detail": "SSE streaming, JWT auth"
+      },
+      "runtime": {
+        "title": "LangGraph runtime",
+        "detail": "Graph, runner, recovery worker"
+      },
+      "openai": {
+        "title": "OpenAI",
+        "detail": "Chat and embedding models"
+      },
       "postgres": {
         "title": "PostgreSQL",
         "detail": "Checkpoints, store + pgvector, runs, tool ledger"

@@ -1,5 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query';
-import { BellOff } from 'lucide-react';
+import { CircleX } from 'lucide-react';
 import { useState } from 'react';
 import type { ComponentProps } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -74,7 +74,7 @@ export function DismissApprovalsButton({
           setOpen(true);
         }}
       >
-        <BellOff aria-hidden />
+        <CircleX aria-hidden />
         {t('dismiss.action')}
       </Button>
       <Dialog open={open} onOpenChange={setOpen}>

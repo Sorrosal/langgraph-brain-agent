@@ -96,8 +96,8 @@ export function BrainRules() {
         description={t('rules.persona.description')}
       >
         <Card className="overflow-hidden">
-          <CardContent className="border-brand border-l-2 p-4 text-sm whitespace-pre-wrap">
-            {rules.persona ?? (
+          <CardContent className="border-brand border-l-2 p-4 text-sm whitespace-pre-line">
+            {rules.persona?.replace(/(?<!\n)\n(?!\n)/g, ' ') ?? (
               <span className="text-muted-foreground">{t('rules.persona.empty')}</span>
             )}
           </CardContent>

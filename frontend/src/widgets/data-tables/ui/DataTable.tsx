@@ -130,7 +130,13 @@ export function DataTable<T>({
       className={cn(FRAME, 'transition-opacity', isRefreshing && 'opacity-60')}
       aria-busy={isRefreshing}
     >
-      <div className="overflow-x-auto">
+      {/* Focusable so keyboard users can scroll the table sideways on narrow screens. */}
+      <div
+        className="overflow-x-auto focus-visible:outline-2"
+        tabIndex={0}
+        role="region"
+        aria-label={t(`${entity}.title`)}
+      >
         <table className="w-full min-w-[40rem] text-left text-sm" aria-label={t(`${entity}.title`)}>
           <thead className="bg-subtle text-muted-foreground border-b">
             <tr>
