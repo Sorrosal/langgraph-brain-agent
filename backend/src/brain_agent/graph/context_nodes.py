@@ -12,6 +12,7 @@ from pydantic import BaseModel
 
 from brain_agent.brain.context import ContextBudget, compact_messages, over_budget
 from brain_agent.brain.memory import MemoryKind, MemoryRecord, MemoryService, format_memories
+from brain_agent.graph.nodes import is_untrusted, untrusted_in_context
 from brain_agent.graph.state import AgentState
 from brain_agent.tools.memory_tools import thread_id_of, user_id_of
 
@@ -109,7 +110,8 @@ def make_memorize(model: BaseChatModel) -> ContextNode:
 
     async def memorize(state: AgentState, config: RunnableConfig) -> dict[str, Any]:
         transcript = _last_turn(state)
-        if not transcript:
+        if not transcript or untrusted_in_context(state):
+            # Outside content may be steering the conversation: learn nothing from it.
             return {}
         try:
             service = MemoryService(get_store())
@@ -123,9 +125,10 @@ def make_memorize(model: BaseChatModel) -> ContextNode:
                 config,
             )
             parsed = ExtractedMemories.model_validate(result)
-            ids = {m.id for m in known}
+            # Only memories shown to the model and learnt from chats can be changed or removed;
+            # the ones the user wrote by hand stay under the user's control.
+            ids = {m.id for m in known if m.source_thread_id is not None}
             for item in parsed.items[:MAX_EXTRACTED_MEMORIES]:
-                # Only memories shown to the model can be changed or removed.
                 target = item.memory_id if item.memory_id in ids else None
                 if item.action == "delete":
                     if target:
@@ -162,6 +165,10 @@ def make_summarize(model: BaseChatModel, budget: ContextBudget) -> ContextNode:
         if compacted is None:
             return {}
         summary, removals = compacted
-        return {"summary": summary, "messages": removals}
+        removed = {r.id for r in removals}
+        tainted = state.get("summary_tainted", False) or any(
+            is_untrusted(m) for m in messages if m.id in removed
+        )
+        return {"summary": summary, "messages": removals, "summary_tainted": tainted}
 
     return summarize

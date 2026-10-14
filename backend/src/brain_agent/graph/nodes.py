@@ -1,6 +1,6 @@
 """Graph nodes and routing."""
 
-from collections.abc import Awaitable, Callable, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from typing import Any, Protocol
 
 import structlog
@@ -12,9 +12,10 @@ from langchain_core.tools import BaseTool
 from langgraph.graph import END
 from langgraph.types import Send, interrupt
 
+from brain_agent.brain.prompt import UNTRUSTED_TAG
 from brain_agent.graph.state import AgentState
 from brain_agent.hitl.models import ActionRequest, ApprovalInterrupt, ApprovalResponse
-from brain_agent.hitl.policy import ApprovalPolicy, PolicyVerdict, strictest
+from brain_agent.hitl.policy import ApprovalPolicy, PolicyVerdict
 
 logger = structlog.get_logger(__name__)
 
@@ -54,9 +55,22 @@ CLEAR_TOOL_RESULT_CHARS = 1500
 """Tool results from earlier turns longer than this are replaced by a stub in the prompt."""
 
 UNTRUSTED_REASON = (
-    "Content from outside the organisation (e.g. an email) was read in this turn; a human "
+    "Content from outside the organisation (e.g. an email) is in this conversation; a human "
     "confirms any action that follows it."
 )
+
+
+def _with_taint(verdict: PolicyVerdict | None) -> PolicyVerdict:
+    """Require approval because outside content is in scope, keeping any rule verdict visible."""
+    if verdict is None:
+        return PolicyVerdict(risk="high", reason=UNTRUSTED_REASON, rule_ids=("untrusted-content",))
+    if verdict.blocked:
+        return verdict
+    return PolicyVerdict(
+        risk="high",
+        reason=f"{verdict.reason} {UNTRUSTED_REASON}",
+        rule_ids=(*verdict.rule_ids, "untrusted-content"),
+    )
 
 
 def last_human_index(messages: Sequence[AnyMessage]) -> int | None:
@@ -74,16 +88,21 @@ def _tool_names(messages: Sequence[AnyMessage]) -> dict[str, str]:
     }
 
 
-def untrusted_in_turn(messages: Sequence[AnyMessage], tools: Mapping[str, BaseTool]) -> bool:
-    """Whether a tool flagged ``untrusted_output`` returned content in the current turn."""
-    start = last_human_index(messages) or 0
-    names = _tool_names(messages[start:])
-    for message in messages[start:]:
-        if isinstance(message, ToolMessage):
-            tool = tools.get(names.get(message.tool_call_id, ""))
-            if tool is not None and (tool.metadata or {}).get("untrusted_output") is True:
-                return True
-    return False
+def is_untrusted(message: AnyMessage) -> bool:
+    """A tool result spotlighted as outside content (see ``tools/email_tools.py``)."""
+    return isinstance(message, ToolMessage) and message.text.lstrip().startswith(
+        f"<{UNTRUSTED_TAG}"
+    )
+
+
+def untrusted_in_context(state: AgentState) -> bool:
+    """Whether outside content can still steer the model in this thread.
+
+    Sticky on purpose: once an email has been read, the model's own paraphrase of it stays in
+    the history, and compaction folds it into the summary (``summary_tainted``). Conservative,
+    like FIDES' most-restrictive-wins labels: writes keep needing a human for this thread.
+    """
+    return bool(state.get("summary_tainted")) or any(map(is_untrusted, state["messages"]))
 
 
 def clear_old_tool_results(messages: Sequence[AnyMessage]) -> tuple[list[AnyMessage], int]:
@@ -113,6 +132,15 @@ def clear_old_tool_results(messages: Sequence[AnyMessage]) -> tuple[list[AnyMess
     return view, cleared
 
 
+def _usage(response: AIMessage) -> dict[str, int | None]:
+    """Provider-reported input tokens and how many of them came from its prompt cache."""
+    usage = response.usage_metadata
+    if usage is None:
+        return {"input_tokens": None, "cached_tokens": None}
+    details = usage.get("input_token_details") or {}
+    return {"input_tokens": usage["input_tokens"], "cached_tokens": details.get("cache_read")}
+
+
 def _default_turn_context(state: AgentState) -> str | None:
     parts = []
     if summary := state.get("summary"):
@@ -127,7 +155,6 @@ def make_reason_node(
     *,
     system_prompt: str | Callable[[], str] = DEFAULT_SYSTEM_PROMPT,
     turn_context: Callable[[AgentState], str | None] = _default_turn_context,
-    tools: Sequence[BaseTool] = (),
     max_steps: int | None = None,
 ) -> ReasonNode:
     """Create the node that calls the (already tool-bound) chat model.
@@ -141,7 +168,6 @@ def make_reason_node(
     When ``max_steps`` is set and the run has already taken that many steps, the node skips
     the model and returns a final message explaining the limit.
     """
-    tools_by_name = {tool.name: tool for tool in tools}
 
     async def reason(state: AgentState, config: RunnableConfig) -> AgentState:
         step_count = state.get("step_count", 0)
@@ -173,7 +199,8 @@ def make_reason_node(
             "history_messages": len(history),
             "history_tokens": count_tokens_approximately(history),
             "cleared_tool_results": cleared,
-            "untrusted_in_turn": untrusted_in_turn(state["messages"], tools_by_name),
+            "untrusted_in_context": untrusted_in_context(state),
+            **_usage(response),
         }
         return {"messages": [response], "step_count": step_count + 1, "context_report": report}
 
@@ -216,16 +243,13 @@ def make_approval_gate(tools: Sequence[BaseTool], policy: ApprovalPolicy) -> Gat
             return _reject_duplicate_ids(pending)
         blocked: list[tuple[ToolCall, PolicyVerdict]] = []
         verdicts: dict[str, dict[str, Any]] = {}
-        tainted = untrusted_in_turn(state["messages"], tools_by_name)
+        tainted = untrusted_in_context(state)
         for call_id, call in calls.items():
             tool = tools_by_name.get(call["name"])
             verdict = policy.evaluate(call, tool)
             if tainted and not (tool is not None and (tool.metadata or {}).get("read_only")):
                 # Untrusted content in scope may be steering this action: a human decides.
-                taint = PolicyVerdict(
-                    risk="high", reason=UNTRUSTED_REASON, rule_ids=("untrusted-content",)
-                )
-                verdict = strictest(verdict, taint)
+                verdict = _with_taint(verdict)
             if verdict is None:
                 continue
             if verdict.blocked:

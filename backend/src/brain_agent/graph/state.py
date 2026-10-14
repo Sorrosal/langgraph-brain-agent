@@ -24,5 +24,7 @@ class AgentState(TypedDict):
     """Verdicts the approval gate persisted for ``await_approval`` (AI message id, verdicts)."""
     session: NotRequired[dict[str, str]]
     """Who is talking and from where (user_name, role, language, timezone), set per message."""
+    summary_tainted: NotRequired[bool]
+    """The summary folded in outside content (an email): writes keep needing approval."""
     context_report: NotRequired[dict[str, Any]]
     """What the last model call was given: sections, approximate tokens, cleared results."""

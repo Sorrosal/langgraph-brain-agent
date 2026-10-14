@@ -50,6 +50,9 @@ def _render(messages: Sequence[AnyMessage]) -> str:
         if isinstance(message, AIMessage) and message.tool_calls:
             calls = ", ".join(f"{c['name']}({c['args']})" for c in message.tool_calls)
             lines.append(f"assistant: {message.text} [tool calls: {calls}]".strip())
+        elif isinstance(message, ToolMessage) and message.text.lstrip().startswith("<untrusted"):
+            # Outside content (an email) never reaches the summary verbatim.
+            lines.append("tool: [outside content omitted]")
         else:
             lines.append(f"{message.type}: {message.text}")
     return "\n".join(lines)

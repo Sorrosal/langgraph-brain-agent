@@ -17,9 +17,9 @@ _SEPARATORS = re.compile(r"[,;]")
 
 
 def _untrusted(payload: str) -> str:
-    """Spotlight email content as outside data. JSON may escape ``/`` as ``\\/``, so a body
-    cannot close the tag early."""
-    escaped = payload.replace(f"</{UNTRUSTED_TAG}", f"<\\/{UNTRUSTED_TAG}")
+    """Spotlight email content as outside data. Every ``<`` in the JSON becomes ``\\u003c``
+    (still valid JSON), so no spelling of a closing tag can end the block early."""
+    escaped = payload.replace("<", "\\u003c")
     return f'<{UNTRUSTED_TAG} source="email">\n{escaped}\n</{UNTRUSTED_TAG}>'
 
 

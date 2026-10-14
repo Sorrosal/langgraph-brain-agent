@@ -6,6 +6,7 @@ the runner binds them) is merged into every record.
 """
 
 import logging
+import re
 import sys
 from typing import TextIO
 
@@ -16,6 +17,22 @@ from brain_agent.config import Settings
 
 _HANDLER_MARK = "_brain_agent_handler"
 _UVICORN_LOGGERS = ("uvicorn", "uvicorn.error", "uvicorn.access")
+_TOKEN_IN_QUERY = re.compile(r"(access_token=)[^&\s\"']+")
+
+
+class RedactTokens(logging.Filter):
+    """Mask ``access_token`` query values (SSE streams carry the token in the URL), so access
+    logs never store a usable bearer token."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if isinstance(record.args, tuple):
+            record.args = tuple(
+                _TOKEN_IN_QUERY.sub(r"\1[redacted]", a) if isinstance(a, str) else a
+                for a in record.args
+            )
+        if isinstance(record.msg, str):
+            record.msg = _TOKEN_IN_QUERY.sub(r"\1[redacted]", record.msg)
+        return True
 
 
 def configure_logging(settings: Settings, stream: TextIO | None = None) -> None:
@@ -40,6 +57,7 @@ def configure_logging(settings: Settings, stream: TextIO | None = None) -> None:
     )
     handler = logging.StreamHandler(stream or sys.stderr)
     setattr(handler, _HANDLER_MARK, True)
+    handler.addFilter(RedactTokens())
     handler.setFormatter(
         structlog.stdlib.ProcessorFormatter(
             foreign_pre_chain=shared,

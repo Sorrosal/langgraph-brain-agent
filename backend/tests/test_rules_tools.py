@@ -60,3 +60,29 @@ async def test_update_rules_file_is_admin_only_validated_and_needs_approval(
     tool_call = ToolCall(name=update.name, args={}, id="1")
     verdict = MetadataApprovalPolicy().evaluate(tool_call, update)
     assert verdict is not None and verdict.risk == "high"
+
+
+async def test_the_agent_can_only_add_or_tighten_hard_rules(tmp_path: Path) -> None:
+    approval = RULES.replace("action: block", "action: require_approval")
+    (tmp_path / "default.yaml").write_text(approval)
+    engine = RulesEngine.from_source(YamlRuleSource(tmp_path))
+    users = InMemoryUserRepository()
+    admin = await users.create("a@acme.com", "x", "Admin")
+    _, update = build_rules_tools(tmp_path, engine, users, asyncio.Lock())
+
+    async def call(content: str) -> str:
+        return str(
+            await update.ainvoke(
+                {"filename": "default.yaml", "content": content},
+                config={"configurable": {"user_id": admin.id}},
+            )
+        )
+
+    removed = "version: 1\nhard_rules: []\n"
+    assert "only add hard rules" in await call(removed) or "Invalid rules" in await call(removed)
+    relaxed = approval.replace("tool: crm_delete_record", "tool: something_else")
+    assert "no-crm-deletion" in await call(relaxed)
+    assert (tmp_path / "default.yaml").read_text() == approval
+
+    assert "Saved" in await call(RULES)  # require_approval -> block is a tightening
+    assert "Saved" in await call(NEW_RULES)  # adding a rule is fine

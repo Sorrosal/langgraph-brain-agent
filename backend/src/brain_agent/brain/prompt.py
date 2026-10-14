@@ -61,6 +61,12 @@ def build_system_prompt(
     return "\n\n".join(sections) + "\n"
 
 
+def _one_line(text: str | None, limit: int = 80) -> str:
+    """User-chosen text (a display name) as one printable line: it cannot fake prompt lines."""
+    printable = "".join(ch if ch.isprintable() else " " for ch in text or "")
+    return " ".join(printable.split())[:limit]
+
+
 def _zone(name: str | None) -> ZoneInfo:
     try:
         return ZoneInfo(name) if name else ZoneInfo("UTC")
@@ -80,7 +86,7 @@ def build_turn_context(
     zone = _zone(session.get("timezone"))
     local = (now or datetime.now(UTC)).astimezone(zone)
     lines = [f"- Current date and time: {local:%A %Y-%m-%d %H:%M} ({zone.key})"]
-    if name := session.get("user_name"):
+    if name := _one_line(session.get("user_name")):
         role = session.get("role")
         lines.append(f"- You are talking to {name}" + (f" (role: {role})" if role else ""))
     if language := LANGUAGE_NAMES.get(session.get("language", "")):
